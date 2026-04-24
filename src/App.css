@@ -86,15 +86,158 @@ button {
   align-items: start;
 }
 
-.setup-panel {
+.side-column {
   position: sticky;
   top: 16px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.setup-panel,
+.settings-panel {
   display: grid;
   gap: 16px;
   border: 1px solid #d4d4d8;
   border-radius: 8px;
   background: #ffffff;
   padding: 18px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.security-note,
+.provider-message,
+.role-reason {
+  margin-bottom: 0;
+  color: #52525b;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.provider-list,
+.role-list {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-card,
+.role-row {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+  padding: 12px;
+}
+
+.provider-head,
+.role-row > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-head h3 {
+  margin-bottom: 2px;
+}
+
+.provider-head span,
+.masked-key {
+  color: #71717a;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.masked-key {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-badge,
+.generation-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid #d4d4d8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3f3f46;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: normal;
+}
+
+.status-connected,
+.mode-provider {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.status-failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.status-browser-blocked,
+.mode-local-fallback {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.status-not-configured {
+  border-color: #e4e4e7;
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.provider-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.small-action,
+.danger-action {
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 8px 9px;
+  font-weight: 900;
+}
+
+.danger-action {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.small-action:disabled,
+.danger-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.provider-message.muted {
+  color: #71717a;
+}
+
+.role-row strong {
+  color: #18181b;
+}
+
+.role-row select {
+  min-height: 38px;
 }
 
 .field,
@@ -289,6 +432,14 @@ textarea {
   gap: 8px;
 }
 
+.argument-card > .generation-badge {
+  margin-top: -4px;
+}
+
+.stage-section > .generation-badge {
+  margin-bottom: 12px;
+}
+
 .claim,
 .card-facts dd,
 .opponent-row p,
@@ -400,6 +551,10 @@ textarea {
 .opponent-row strong {
   display: block;
   margin-top: 4px;
+}
+
+.opponent-row .generation-badge {
+  margin-top: 6px;
 }
 
 .opponent-row p {
@@ -615,7 +770,7 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .setup-panel {
+  .side-column {
     position: static;
   }
 

@@ -1,3 +1,5 @@
+import type { AiRunMetadata, GenerationSource } from './roleAssignments'
+
 export type PreparedSide = 'affirmative' | 'negative'
 
 export type PrepSideChoice = PreparedSide | 'both'
@@ -49,6 +51,7 @@ export type ArgumentCard = {
   strengthScore: number
   riskScore: number
   recommendedRole: ArgumentRecommendation
+  generatedBy?: GenerationSource
 }
 
 export type OpponentLikelyArgument = {
@@ -60,6 +63,7 @@ export type OpponentLikelyArgument = {
   likelyStage: string
   threatScore: number
   responseHint: string
+  generatedBy?: GenerationSource
 }
 
 export type ArgumentDiscovery = {
@@ -99,6 +103,7 @@ export type SimulationIteration = {
   replaced: string[]
   why: string
   timeline: TimelineStageResult[]
+  generatedBy?: GenerationSource
 }
 
 export type CoreArgumentRoute = {
@@ -140,11 +145,13 @@ export type FinalRouteMap = {
   attackDefenseMap: AttackDefensePair[]
   abandonedPreparedRoutes: EmergencyRoute[]
   evidenceChecklist: EvidenceChecklistItem[]
+  generatedBy?: GenerationSource
 }
 
 export type HumanPrepSession = {
   config: HumanPrepConfig
   format: DebateFormatPreset
+  aiRun: AiRunMetadata
   discovery: ArgumentDiscovery
   selection: ArgumentSelection
   iterations: SimulationIteration[]

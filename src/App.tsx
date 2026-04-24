@@ -2,10 +2,31 @@ import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
 import {
+  applyProviderConnectionResult,
+  getProviderDefinition,
+  getProviderSummaries,
+  setProviderApiKey,
+  testProviderConnectivity,
+  type ProviderId,
+  type ProviderSettings,
+  type ProviderSummary,
+} from './domain/aiProviders'
+import {
   autoSelectArguments,
   createHumanPrepSession,
   getDebateFormatPresets,
 } from './domain/debate'
+import { createProviderSettingsRepository } from './domain/providerSettings'
+import {
+  assignProviderToRole,
+  createRoleAssignmentsRepository,
+  debateAgentRoles,
+  getRoleAssignmentChoices,
+  type DebateAgentRole,
+  type GenerationSource,
+  type RoleAssignments,
+  type RoleProviderSelection,
+} from './domain/roleAssignments'
 import type {
   ArgumentCard,
   ArgumentStatus,
@@ -50,12 +71,23 @@ const statusLabel: Record<ArgumentStatus, string> = {
   unassigned: '应急',
 }
 
+type ProviderDraftKeys = Partial<Record<ProviderId, string>>
+
 function App() {
+  const providerRepository = useMemo(() => createProviderSettingsRepository(window.localStorage), [])
+  const roleRepository = useMemo(() => createRoleAssignmentsRepository(window.localStorage), [])
   const [config, setConfig] = useState<HumanPrepConfig>(defaultConfig)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ArgumentStatus>>({})
   const [copyState, setCopyState] = useState('复制备赛包')
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings>(() => providerRepository.load())
+  const [roleAssignments, setRoleAssignments] = useState<RoleAssignments>(() => roleRepository.load())
+  const [providerDraftKeys, setProviderDraftKeys] = useState<ProviderDraftKeys>({})
+  const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null)
   const presets = useMemo(() => getDebateFormatPresets(), [])
-  const session = useMemo(() => createHumanPrepSession(config, statusOverrides), [config, statusOverrides])
+  const session = useMemo(
+    () => createHumanPrepSession(config, statusOverrides, { providerSettings, roleAssignments }),
+    [config, statusOverrides, providerSettings, roleAssignments],
+  )
 
   function updateConfig(next: HumanPrepConfig) {
     setConfig(next)
@@ -97,6 +129,63 @@ function App() {
     setCopyState('复制备赛包')
   }
 
+  function updateProviderDraft(providerId: ProviderId, value: string) {
+    setProviderDraftKeys((current) => ({ ...current, [providerId]: value }))
+  }
+
+  function saveProviderKey(providerId: ProviderId) {
+    const draftKey = providerDraftKeys[providerId] ?? ''
+    const nextSettings = setProviderApiKey(providerSettings, providerId, draftKey)
+
+    persistProviderSettings(nextSettings)
+    setProviderDraftKeys((current) => ({ ...current, [providerId]: '' }))
+  }
+
+  function clearProviderKey(providerId: ProviderId) {
+    const nextSettings = setProviderApiKey(providerSettings, providerId, '')
+    const nextAssignments = resetRolesUsingProvider(roleAssignments, providerId)
+
+    persistProviderSettings(nextSettings)
+    persistRoleAssignments(nextAssignments)
+    setProviderDraftKeys((current) => ({ ...current, [providerId]: '' }))
+  }
+
+  async function testProvider(providerId: ProviderId) {
+    const draftKey = providerDraftKeys[providerId]?.trim()
+    const key = draftKey || providerSettings.providers[providerId].apiKey
+
+    setTestingProvider(providerId)
+    try {
+      const result = await testProviderConnectivity(providerId, key, window.fetch.bind(window))
+      const baseSettings = draftKey && result.checkedAt
+        ? setProviderApiKey(providerSettings, providerId, draftKey)
+        : providerSettings
+      const nextSettings = applyProviderConnectionResult(baseSettings, providerId, result)
+      persistProviderSettings(nextSettings)
+      if (draftKey && result.checkedAt) {
+        setProviderDraftKeys((current) => ({ ...current, [providerId]: '' }))
+      }
+    } finally {
+      setTestingProvider(null)
+    }
+  }
+
+  function updateRoleAssignment(role: DebateAgentRole, selection: RoleProviderSelection) {
+    persistRoleAssignments(assignProviderToRole(roleAssignments, role, selection))
+  }
+
+  function persistProviderSettings(nextSettings: ProviderSettings) {
+    setProviderSettings(nextSettings)
+    providerRepository.save(nextSettings)
+    setCopyState('复制备赛包')
+  }
+
+  function persistRoleAssignments(nextAssignments: RoleAssignments) {
+    setRoleAssignments(nextAssignments)
+    roleRepository.save(nextAssignments)
+    setCopyState('复制备赛包')
+  }
+
   async function copyPrepPack() {
     try {
       await navigator.clipboard.writeText(session.prepPack)
@@ -117,14 +206,31 @@ function App() {
       </header>
 
       <section className="workspace">
-        <SetupPanel
-          config={config}
-          presets={presets}
-          session={session}
-          onAutoSelect={applyAutoSelect}
-          onChange={updateConfig}
-          onSubmit={rerunPrep}
-        />
+        <aside className="side-column">
+          <SetupPanel
+            config={config}
+            presets={presets}
+            session={session}
+            onAutoSelect={applyAutoSelect}
+            onChange={updateConfig}
+            onSubmit={rerunPrep}
+          />
+          <ProviderSettingsPanel
+            draftKeys={providerDraftKeys}
+            providerSettings={providerSettings}
+            testingProvider={testingProvider}
+            onChangeDraft={updateProviderDraft}
+            onClearKey={clearProviderKey}
+            onSaveKey={saveProviderKey}
+            onTestProvider={testProvider}
+          />
+          <RoleAssignmentsPanel
+            aiRunRoles={session.aiRun.roles}
+            providerSettings={providerSettings}
+            roleAssignments={roleAssignments}
+            onChange={updateRoleAssignment}
+          />
+        </aside>
 
         <section className="flow">
           <DiscoveryPanel session={session} onSetStatus={updateCardStatus} />
@@ -134,6 +240,197 @@ function App() {
         </section>
       </section>
     </main>
+  )
+}
+
+function ProviderSettingsPanel({
+  draftKeys,
+  providerSettings,
+  testingProvider,
+  onChangeDraft,
+  onClearKey,
+  onSaveKey,
+  onTestProvider,
+}: {
+  draftKeys: ProviderDraftKeys
+  providerSettings: ProviderSettings
+  testingProvider: ProviderId | null
+  onChangeDraft: (providerId: ProviderId, value: string) => void
+  onClearKey: (providerId: ProviderId) => void
+  onSaveKey: (providerId: ProviderId) => void
+  onTestProvider: (providerId: ProviderId) => void
+}) {
+  const summaries = getProviderSummaries(providerSettings)
+
+  return (
+    <section className="settings-panel" aria-labelledby="ai-settings-title">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">AI Settings</p>
+          <h2 id="ai-settings-title">服务设置</h2>
+        </div>
+      </div>
+      <p className="security-note">
+        本地原型：API Key 仅保存在本浏览器 localStorage；生产环境应迁移到后端或安全 vault。保存后只显示脱敏摘要。
+      </p>
+
+      <div className="provider-list">
+        {summaries.map((summary) => (
+          <ProviderSettingsCard
+            draftKey={draftKeys[summary.providerId] ?? ''}
+            isTesting={testingProvider === summary.providerId}
+            key={summary.providerId}
+            summary={summary}
+            testDisabled={testingProvider !== null && testingProvider !== summary.providerId}
+            onChangeDraft={onChangeDraft}
+            onClearKey={onClearKey}
+            onSaveKey={onSaveKey}
+            onTestProvider={onTestProvider}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ProviderSettingsCard({
+  draftKey,
+  isTesting,
+  summary,
+  testDisabled,
+  onChangeDraft,
+  onClearKey,
+  onSaveKey,
+  onTestProvider,
+}: {
+  draftKey: string
+  isTesting: boolean
+  summary: ProviderSummary
+  testDisabled: boolean
+  onChangeDraft: (providerId: ProviderId, value: string) => void
+  onClearKey: (providerId: ProviderId) => void
+  onSaveKey: (providerId: ProviderId) => void
+  onTestProvider: (providerId: ProviderId) => void
+}) {
+  const definition = getProviderDefinition(summary.providerId)
+  const inputId = `${summary.providerId}-api-key`
+
+  return (
+    <article className="provider-card">
+      <div className="provider-head">
+        <div>
+          <h3>{summary.displayName}</h3>
+          <span>{summary.modelFamily}</span>
+        </div>
+        <ProviderStatusBadge summary={summary} />
+      </div>
+
+      {summary.configured ? <p className="masked-key">已保存 {summary.maskedKey}</p> : null}
+
+      <label htmlFor={inputId}>API Key</label>
+      <input
+        autoComplete="off"
+        id={inputId}
+        placeholder={summary.configured ? `已保存 ${summary.maskedKey}` : definition.keyHint}
+        spellCheck={false}
+        type="password"
+        value={draftKey}
+        onChange={(event) => onChangeDraft(summary.providerId, event.target.value)}
+      />
+
+      <div className="provider-actions">
+        <button
+          className="secondary-action small-action"
+          disabled={!draftKey.trim()}
+          type="button"
+          onClick={() => onSaveKey(summary.providerId)}
+        >
+          保存
+        </button>
+        <button
+          className="primary-action small-action"
+          disabled={testDisabled}
+          type="button"
+          onClick={() => onTestProvider(summary.providerId)}
+        >
+          {isTesting ? '测试中' : '测试'}
+        </button>
+        <button
+          className="danger-action small-action"
+          disabled={!summary.configured && !draftKey.trim()}
+          type="button"
+          onClick={() => onClearKey(summary.providerId)}
+        >
+          清除
+        </button>
+      </div>
+
+      {summary.message ? <p className="provider-message">{summary.message}</p> : null}
+      {summary.lastCheckedAt ? <p className="provider-message muted">上次测试：{formatCheckedAt(summary.lastCheckedAt)}</p> : null}
+    </article>
+  )
+}
+
+function ProviderStatusBadge({ summary }: { summary: ProviderSummary }) {
+  return <span className={`status-badge status-${summary.status}`}>{summary.statusLabel}</span>
+}
+
+function RoleAssignmentsPanel({
+  aiRunRoles,
+  providerSettings,
+  roleAssignments,
+  onChange,
+}: {
+  aiRunRoles: Record<DebateAgentRole, GenerationSource>
+  providerSettings: ProviderSettings
+  roleAssignments: RoleAssignments
+  onChange: (role: DebateAgentRole, selection: RoleProviderSelection) => void
+}) {
+  const choices = getRoleAssignmentChoices(providerSettings)
+
+  return (
+    <section className="settings-panel" aria-labelledby="role-settings-title">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Agent Routing</p>
+          <h2 id="role-settings-title">角色分配</h2>
+        </div>
+      </div>
+
+      <div className="role-list">
+        {debateAgentRoles.map((role) => {
+          const selection = roleAssignments[role.id] ?? 'auto'
+          const source = aiRunRoles[role.id]
+          const hasCurrentChoice = choices.some((choice) => choice.value === selection)
+
+          return (
+            <div className="role-row" key={role.id}>
+              <div>
+                <strong>{role.label}</strong>
+                <GenerationBadge source={source} />
+              </div>
+              <select
+                aria-label={`${role.label} provider`}
+                value={selection}
+                onChange={(event) => onChange(role.id, event.target.value as RoleProviderSelection)}
+              >
+                {choices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {formatRoleChoice(choice)}
+                  </option>
+                ))}
+                {!hasCurrentChoice && selection !== 'auto' ? (
+                  <option disabled value={selection}>
+                    {getProviderDefinition(selection).displayName}（未配置）
+                  </option>
+                ) : null}
+              </select>
+              {source.reason ? <p className="role-reason">{source.reason}</p> : null}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -284,6 +581,7 @@ function DiscoveryPanel({
             <article className="opponent-row" key={argument.id}>
               <div>
                 <span>{sideLabel[argument.side]} · {argument.likelyStage}</span>
+                <GenerationBadge source={argument.generatedBy} />
                 <strong>{argument.title}</strong>
               </div>
               <p>{argument.claim}</p>
@@ -311,6 +609,7 @@ function ArgumentCardView({
         <span>{sideLabel[card.side]}</span>
         <span>{statusLabel[status]}</span>
       </div>
+      <GenerationBadge source={card.generatedBy} />
       <h3>{card.title}</h3>
       <p className="claim">{card.claim}</p>
 
@@ -381,6 +680,7 @@ function SimulationPanel({
           <details className="iteration-card" key={iteration.id} open={index < 2}>
             <summary>
               <span>第{iteration.iteration}轮 · {sideLabel[iteration.side]}</span>
+              <GenerationBadge source={iteration.generatedBy} />
               <b>{iteration.routeHealth}</b>
             </summary>
             <div className="iteration-body">
@@ -412,6 +712,7 @@ function FinalRoutePanel({ routeMap }: { routeMap: FinalRouteMap }) {
   return (
     <section className="stage-section">
       <SectionHeader eyebrow="Final Route Map" title="最终路线图" />
+      <GenerationBadge source={routeMap.generatedBy} />
       <div className="route-layout">
         {routeMap.routes.map((route) => (
           <article className="route-panel" key={route.side}>
@@ -513,6 +814,18 @@ function ScorePill({ label, value }: { label: string; value: number }) {
   )
 }
 
+function GenerationBadge({ source }: { source?: GenerationSource }) {
+  if (!source) return null
+
+  const modeLabel = source.mode === 'provider' ? '已连接' : '本地 fallback'
+
+  return (
+    <span className={`generation-badge mode-${source.mode}`} title={source.reason ?? source.label}>
+      {source.roleLabel} · {source.providerName} · {modeLabel}
+    </span>
+  )
+}
+
 function ResultBlock({ title, lines }: { title: string; lines: string[] }) {
   return (
     <div className="result-block">
@@ -531,6 +844,28 @@ function MapBlock({ children, title }: { children: ReactNode; title: string }) {
       {children}
     </article>
   )
+}
+
+function formatCheckedAt(isoDate: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+  }).format(new Date(isoDate))
+}
+
+function formatRoleChoice(choice: ReturnType<typeof getRoleAssignmentChoices>[number]): string {
+  if (choice.value === 'auto') return 'Auto'
+  const status = choice.status === 'connected' ? '已连接' : '已配置'
+  return `${choice.label}（${status}）`
+}
+
+function resetRolesUsingProvider(assignments: RoleAssignments, providerId: ProviderId): RoleAssignments {
+  return debateAgentRoles.reduce((nextAssignments, role) => {
+    nextAssignments[role.id] = assignments[role.id] === providerId ? 'auto' : assignments[role.id]
+    return nextAssignments
+  }, { ...assignments })
 }
 
 export default App

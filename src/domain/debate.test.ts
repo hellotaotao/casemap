@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyProviderConnectionResult,
+  createDefaultProviderSettings,
+  setProviderApiKey,
+} from './aiProviders'
+import {
+  assignProviderToRole,
+  createDefaultRoleAssignments,
+} from './roleAssignments'
+import {
   autoSelectArguments,
   createFinalRouteMap,
   createHumanPrepSession,
@@ -94,5 +103,54 @@ describe('human debate prep domain', () => {
     expect(session.selection.sides.every((side) => side.primary.length === 3)).toBe(true)
     expect(session.iterations).toHaveLength(4)
     expect(session.finalRouteMap.routes).toHaveLength(2)
+  })
+
+  it('attaches provider role metadata to generated workflow results and labels fallback output', () => {
+    const openAiKey = 'sk-proj-1234567890abcdefabcd'
+    const googleKey = 'AIzaSyD1234567890abcdefabcd'
+    let providerSettings = setProviderApiKey(createDefaultProviderSettings(), 'openai', openAiKey)
+    providerSettings = setProviderApiKey(providerSettings, 'google', googleKey)
+    providerSettings = applyProviderConnectionResult(providerSettings, 'openai', {
+      checkedAt: '2026-04-25T00:00:00.000Z',
+      message: 'OpenAI 连接成功',
+      status: 'connected',
+    })
+    const roleAssignments = assignProviderToRole(
+      assignProviderToRole(createDefaultRoleAssignments(), 'affirmative', 'openai'),
+      'negative',
+      'google',
+    )
+
+    const session = createHumanPrepSession(
+      { ...baseConfig, side: 'both' },
+      {},
+      { providerSettings, roleAssignments },
+    )
+    const affirmativeCard = session.discovery.candidateCards.find((card) => card.side === 'affirmative')
+    const negativeCard = session.discovery.candidateCards.find((card) => card.side === 'negative')
+
+    expect(affirmativeCard?.generatedBy).toMatchObject({
+      mode: 'provider',
+      providerId: 'openai',
+      providerName: 'OpenAI',
+      role: 'affirmative',
+    })
+    expect(negativeCard?.generatedBy).toMatchObject({
+      mode: 'local-fallback',
+      providerId: 'google',
+      providerName: 'Google Gemini',
+      role: 'negative',
+    })
+    expect(session.iterations[0].generatedBy).toMatchObject({
+      mode: 'provider',
+      providerId: 'openai',
+      role: 'attackSimulator',
+    })
+    expect(session.aiRun.roles.affirmative.label).toContain('OpenAI')
+    expect(session.aiRun.roles.negative.reason).toContain('尚未测试')
+    expect(session.prepPack).toContain('## AI 提供方记录')
+    expect(session.prepPack).toContain('正方：OpenAI')
+    expect(session.prepPack).not.toContain(openAiKey)
+    expect(session.prepPack).not.toContain(googleKey)
   })
 })

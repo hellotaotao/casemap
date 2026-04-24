@@ -1,4 +1,14 @@
 import { createSeededRandom, scoreBetween, stableHash } from './deterministic'
+import { createDefaultProviderSettings, type ProviderSettings } from './aiProviders'
+import {
+  createAiRunMetadata,
+  createDefaultRoleAssignments,
+  debateAgentRoles,
+  type AiRunMetadata,
+  type DebateAgentRole,
+  type GenerationSource,
+  type RoleAssignments,
+} from './roleAssignments'
 import type {
   ArgumentCard,
   ArgumentDiscovery,
@@ -20,6 +30,11 @@ import type {
   SimulationIteration,
   TimelineStageResult,
 } from './types'
+
+export type DebateGenerationContext = {
+  providerSettings?: ProviderSettings
+  roleAssignments?: RoleAssignments
+}
 
 const defaultTopic = '人工智能工具应当用于辅助人类辩手备赛'
 
@@ -382,12 +397,17 @@ export function getPreparedSides(side: HumanPrepConfig['side']): PreparedSide[] 
   return side === 'both' ? ['affirmative', 'negative'] : [side]
 }
 
-export function generateArgumentDiscovery(config: HumanPrepConfig): ArgumentDiscovery {
+export function generateArgumentDiscovery(
+  config: HumanPrepConfig,
+  roleSources?: Partial<Record<DebateAgentRole, GenerationSource>>,
+): ArgumentDiscovery {
   const normalized = normalizePrepConfig(config)
   const format = getDebateFormatPreset(normalized.formatId)
-  const candidateCards = getPreparedSides(normalized.side).flatMap((side) => buildArgumentCardsForSide(normalized.topic, side))
+  const candidateCards = getPreparedSides(normalized.side).flatMap((side) =>
+    buildArgumentCardsForSide(normalized.topic, side, roleSources?.[side]),
+  )
   const opponentLikelyArguments = getPreparedSides(normalized.side).flatMap((side) =>
-    buildOpponentLikelyArguments(normalized.topic, side, format),
+    buildOpponentLikelyArguments(normalized.topic, side, format, roleSources?.attackSimulator),
   )
 
   return {
@@ -509,13 +529,14 @@ export function simulateStrategyIterations(
   format: DebateFormatPreset,
   selection: ArgumentSelection,
   opponentLikelyArguments: OpponentLikelyArgument[],
+  generatedBy?: GenerationSource,
 ): SimulationIteration[] {
   const normalized = normalizePrepConfig(config)
   const iterations: SimulationIteration[] = []
 
   for (let iteration = 1; iteration <= normalized.iterationCount; iteration += 1) {
     for (const sideSelection of selection.sides) {
-      iterations.push(simulateSideIteration(normalized, format, sideSelection, opponentLikelyArguments, iteration))
+      iterations.push(simulateSideIteration(normalized, format, sideSelection, opponentLikelyArguments, iteration, generatedBy))
     }
   }
 
@@ -525,6 +546,7 @@ export function simulateStrategyIterations(
 export function createFinalRouteMap(
   selection: ArgumentSelection,
   opponentLikelyArguments: OpponentLikelyArgument[],
+  generatedBy?: GenerationSource,
 ): FinalRouteMap {
   const routes = selection.sides.map((sideSelection) => createSideRouteMap(sideSelection))
   const attackDefenseMap = selection.sides.flatMap((sideSelection) => createAttackDefensePairs(sideSelection, opponentLikelyArguments))
@@ -536,16 +558,19 @@ export function createFinalRouteMap(
     attackDefenseMap,
     abandonedPreparedRoutes,
     evidenceChecklist,
+    ...(generatedBy ? { generatedBy } : {}),
   }
 }
 
 export function createHumanPrepSession(
   config: HumanPrepConfig,
   statusOverrides: Record<string, ArgumentStatus> = {},
+  generationContext: DebateGenerationContext = {},
 ): HumanPrepSession {
   const normalized = normalizePrepConfig(config)
   const format = getDebateFormatPreset(normalized.formatId)
-  const discovery = generateArgumentDiscovery(normalized)
+  const aiRun = createSessionAiRun(generationContext)
+  const discovery = generateArgumentDiscovery(normalized, aiRun.roles)
   const baseSelection =
     normalized.strategyMode === 'ai-auto'
       ? autoSelectArguments(discovery.candidateCards)
@@ -554,18 +579,26 @@ export function createHumanPrepSession(
     ...baseSelection.statusById,
     ...statusOverrides,
   })
-  const iterations = simulateStrategyIterations(normalized, format, selection, discovery.opponentLikelyArguments)
-  const finalRouteMap = createFinalRouteMap(selection, discovery.opponentLikelyArguments)
+  const iterations = simulateStrategyIterations(normalized, format, selection, discovery.opponentLikelyArguments, aiRun.roles.attackSimulator)
+  const finalRouteMap = createFinalRouteMap(selection, discovery.opponentLikelyArguments, aiRun.roles.strategyCoach)
 
   return {
+    aiRun,
     config: normalized,
     format,
     discovery,
     selection,
     iterations,
     finalRouteMap,
-    prepPack: exportPrepPack(normalized, format, discovery, selection, iterations, finalRouteMap),
+    prepPack: exportPrepPack(normalized, format, discovery, selection, iterations, finalRouteMap, aiRun),
   }
+}
+
+function createSessionAiRun(generationContext: DebateGenerationContext): AiRunMetadata {
+  return createAiRunMetadata(
+    generationContext.roleAssignments ?? createDefaultRoleAssignments(),
+    generationContext.providerSettings ?? createDefaultProviderSettings(),
+  )
 }
 
 export function exportPrepPack(
@@ -575,6 +608,7 @@ export function exportPrepPack(
   selection: ArgumentSelection,
   iterations: SimulationIteration[],
   finalRouteMap: FinalRouteMap,
+  aiRun?: AiRunMetadata,
 ): string {
   const sideText = config.side === 'both' ? '双方都准备' : sideLabels[config.side]
   const lines = [
@@ -584,6 +618,7 @@ export function exportPrepPack(
     `我方：${sideText}`,
     `赛制：${format.name}`,
     `迭代轮数：${config.iterationCount}`,
+    ...createAiRunPrepPackLines(aiRun),
     '',
     '## 选择概览',
     ...selection.sides.map(
@@ -630,7 +665,22 @@ export function exportPrepPack(
   return lines.join('\n')
 }
 
-function buildArgumentCardsForSide(topic: string, side: PreparedSide): ArgumentCard[] {
+function createAiRunPrepPackLines(aiRun?: AiRunMetadata): string[] {
+  if (!aiRun) return []
+
+  return [
+    '',
+    '## AI 提供方记录',
+    ...debateAgentRoles.map((role) => {
+      const source = aiRun.roles[role.id]
+      const modeLabel = source.mode === 'provider' ? '已连接' : '本地 fallback'
+      const reason = source.reason ? `；${source.reason}` : ''
+      return `- ${source.roleLabel}：${source.providerName} / ${modeLabel}${reason}`
+    }),
+  ]
+}
+
+function buildArgumentCardsForSide(topic: string, side: PreparedSide, generatedBy?: GenerationSource): ArgumentCard[] {
   const cards = argumentBlueprints.map((blueprint) => {
     const random = createSeededRandom(`${topic}|${side}|${blueprint.id}`)
     const strengthScore = scoreBetween(random, 62, 94)
@@ -650,6 +700,7 @@ function buildArgumentCardsForSide(topic: string, side: PreparedSide): ArgumentC
       strengthScore,
       riskScore,
       recommendedRole: 'discard' as ArgumentRecommendation,
+      ...(generatedBy ? { generatedBy } : {}),
     }
   })
 
@@ -663,6 +714,7 @@ function buildOpponentLikelyArguments(
   topic: string,
   againstSide: PreparedSide,
   format: DebateFormatPreset,
+  generatedBy?: GenerationSource,
 ): OpponentLikelyArgument[] {
   const opponentSide = oppositeSide(againstSide)
   const opponentCards = buildArgumentCardsForSide(topic, opponentSide).slice(0, 5)
@@ -679,6 +731,7 @@ function buildOpponentLikelyArguments(
     responseHint: card.strongestAttack.includes('判准')
       ? '先承认判准差异，再把比较拉回本方可验证收益。'
       : card.bestDefense,
+    ...(generatedBy ? { generatedBy } : {}),
   }))
 }
 
@@ -688,6 +741,7 @@ function simulateSideIteration(
   sideSelection: SideArgumentSelection,
   opponentLikelyArguments: OpponentLikelyArgument[],
   iteration: number,
+  generatedBy?: GenerationSource,
 ): SimulationIteration {
   const primary = sideSelection.primary
   const backup = sideSelection.backup
@@ -724,6 +778,7 @@ function simulateSideIteration(
       ? '模拟显示高风险主论点容易被连续质询追穿，因此把它改成防守材料，用低风险备选稳住开篇。'
       : '模拟显示现有三论点可以互相补位，只需要减少过度承诺并预写反问。',
     timeline,
+    ...(generatedBy ? { generatedBy } : {}),
   }
 }
 
