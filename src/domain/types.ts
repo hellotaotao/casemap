@@ -1,100 +1,153 @@
-export type DebateSide = 'pro' | 'con'
+export type PreparedSide = 'affirmative' | 'negative'
 
-export type JudgeStyle = 'policy' | 'parliamentary' | 'socratic' | 'executive'
+export type PrepSideChoice = PreparedSide | 'both'
 
-export type DebateConfig = {
-  motion: string
-  proRole: string
-  conRole: string
-  roundCount: number
-  judgeStyle: JudgeStyle
+export type DebateFormatId = 'chinese-four-v-four' | 'xin-guo-bian' | 'campus-quick'
+
+export type StrategyMode = 'ai-auto' | 'human-quick'
+
+export type ArgumentRecommendation = 'primary' | 'backup' | 'emergency' | 'discard'
+
+export type ArgumentStatus = 'unassigned' | 'primary' | 'backup' | 'dropped'
+
+export type StageSide = PreparedSide | 'both'
+
+export type HumanPrepConfig = {
+  topic: string
+  side: PrepSideChoice
+  formatId: DebateFormatId
+  iterationCount: number
+  strategyMode: StrategyMode
 }
 
-export type DebateTurn = {
+export type DebateFormatStage = {
   id: string
-  round: number
-  side: DebateSide
-  role: string
+  name: string
+  side: StageSide
+  speaker: string
+  duration: string
+  purpose: string
+}
+
+export type DebateFormatPreset = {
+  id: DebateFormatId
+  name: string
+  shortName: string
+  description: string
+  stages: DebateFormatStage[]
+}
+
+export type ArgumentCard = {
+  id: string
+  side: PreparedSide
   title: string
   claim: string
-  warrant: string
-  evidence: string
-  impact: string
-  attacks: string[]
-  defenses: string[]
+  whyItMatters: string
+  evidenceType: string
+  strongestAttack: string
+  bestDefense: string
+  strengthScore: number
+  riskScore: number
+  recommendedRole: ArgumentRecommendation
 }
 
-export type SideScore = {
-  clarity: number
-  evidence: number
-  rebuttal: number
-  impact: number
-  strategy: number
-  total: number
+export type OpponentLikelyArgument = {
+  id: string
+  againstSide: PreparedSide
+  side: PreparedSide
+  title: string
+  claim: string
+  likelyStage: string
+  threatScore: number
+  responseHint: string
 }
 
-export type JudgeResult = {
-  style: JudgeStyle
-  pro: SideScore
-  con: SideScore
-  winner: DebateSide | 'tie'
-  margin: number
-  ballot: string[]
+export type ArgumentDiscovery = {
+  candidateCards: ArgumentCard[]
+  opponentLikelyArguments: OpponentLikelyArgument[]
 }
 
-export type RoadmapItem = {
-  label: string
-  detail: string
-  side: DebateSide | 'neutral'
+export type SideArgumentSelection = {
+  side: PreparedSide
+  primary: ArgumentCard[]
+  backup: ArgumentCard[]
+  emergency: ArgumentCard[]
+  dropped: ArgumentCard[]
+}
+
+export type ArgumentSelection = {
+  statusById: Record<string, ArgumentStatus>
+  sides: SideArgumentSelection[]
+}
+
+export type TimelineStageResult = {
+  stageId: string
+  stageName: string
+  speaker: string
+  duration: string
+  move: string
+  pressure: string
+}
+
+export type SimulationIteration = {
+  id: string
+  iteration: number
+  side: PreparedSide
+  routeHealth: number
+  worked: string[]
+  gotAttacked: string[]
+  replaced: string[]
+  why: string
+  timeline: TimelineStageResult[]
+}
+
+export type CoreArgumentRoute = {
+  order: number
+  card: ArgumentCard
+  roleInOpening: string
+}
+
+export type SideRouteMap = {
+  side: PreparedSide
+  coreArguments: CoreArgumentRoute[]
+  openingStructure: string[]
+}
+
+export type AttackDefensePair = {
+  side: PreparedSide
+  opponentAttack: string
+  response: string
+  backupResponse: string
+}
+
+export type EmergencyRoute = {
+  side: PreparedSide
+  title: string
+  trigger: string
+  use: string
+}
+
+export type EvidenceChecklistItem = {
+  side: PreparedSide
+  argumentTitle: string
+  evidenceType: string
   priority: 'high' | 'medium' | 'low'
+  note: string
 }
 
-export type AttackDefenseRoadmap = {
-  thesis: string
-  attacks: RoadmapItem[]
-  defenses: RoadmapItem[]
-  crossExamination: RoadmapItem[]
-  prepPriorities: RoadmapItem[]
+export type FinalRouteMap = {
+  routes: SideRouteMap[]
+  attackDefenseMap: AttackDefensePair[]
+  abandonedPreparedRoutes: EmergencyRoute[]
+  evidenceChecklist: EvidenceChecklistItem[]
 }
 
-export type DebateSession = {
-  id: string
-  config: DebateConfig
-  turns: DebateTurn[]
-  judge: JudgeResult
-  roadmap: AttackDefenseRoadmap
-  report: string
-}
-
-export type ArenaConfig = {
-  motion: string
-  modelA: string
-  modelB: string
-  roundCount: number
-  judgeStyle: JudgeStyle
-}
-
-export type ArenaMatch = {
-  id: string
-  proModel: string
-  conModel: string
-  proScore: number
-  conScore: number
-  winner: string | 'tie'
-  judge: JudgeResult
-}
-
-export type LeaderboardEntry = {
-  model: string
-  score: number
-  wins: number
-  losses: number
-  ties: number
-  avgMargin: number
-}
-
-export type ArenaResult = {
-  config: ArenaConfig
-  matches: ArenaMatch[]
-  leaderboard: LeaderboardEntry[]
+export type HumanPrepSession = {
+  config: HumanPrepConfig
+  format: DebateFormatPreset
+  discovery: ArgumentDiscovery
+  selection: ArgumentSelection
+  iterations: SimulationIteration[]
+  finalRouteMap: FinalRouteMap
+  prepPack: string
 }

@@ -1,273 +1,534 @@
-import { FormEvent, useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { createArenaResult, createDebateSession } from './domain/debate'
-import type { ArenaConfig, ArenaResult, DebateConfig, DebateSession, JudgeStyle, RoadmapItem } from './domain/types'
+import {
+  autoSelectArguments,
+  createHumanPrepSession,
+  getDebateFormatPresets,
+} from './domain/debate'
+import type {
+  ArgumentCard,
+  ArgumentStatus,
+  DebateFormatPreset,
+  FinalRouteMap,
+  HumanPrepConfig,
+  HumanPrepSession,
+  PreparedSide,
+  PrepSideChoice,
+  SimulationIteration,
+  StrategyMode,
+} from './domain/types'
 
-const defaultDebateConfig: DebateConfig = {
-  motion: 'AI debate tools should be used to prepare human debaters',
-  proRole: 'Affirmative coach',
-  conRole: 'Negative sparring partner',
-  roundCount: 3,
-  judgeStyle: 'policy',
+const defaultConfig: HumanPrepConfig = {
+  topic: '大学应不应该强制学生使用 AI 工具完成课程学习',
+  side: 'affirmative',
+  formatId: 'chinese-four-v-four',
+  iterationCount: 3,
+  strategyMode: 'ai-auto',
 }
 
-const defaultArenaConfig: ArenaConfig = {
-  motion: 'AI model debates are a useful reasoning benchmark',
-  modelA: 'GPT-5.5',
-  modelB: 'Claude Strategy',
-  roundCount: 2,
-  judgeStyle: 'executive',
-}
-
-const judgeStyles: Array<{ value: JudgeStyle; label: string }> = [
-  { value: 'policy', label: 'Policy judge' },
-  { value: 'parliamentary', label: 'Parliamentary judge' },
-  { value: 'socratic', label: 'Socratic judge' },
-  { value: 'executive', label: 'Executive judge' },
+const sideOptions: Array<{ value: PrepSideChoice; label: string }> = [
+  { value: 'affirmative', label: '正方' },
+  { value: 'negative', label: '反方' },
+  { value: 'both', label: '双方都准备' },
 ]
 
+const strategyModes: Array<{ value: StrategyMode; label: string }> = [
+  { value: 'ai-auto', label: 'AI 自动选择' },
+  { value: 'human-quick', label: '人类快速选择' },
+]
+
+const sideLabel: Record<PreparedSide, string> = {
+  affirmative: '正方',
+  negative: '反方',
+}
+
+const statusLabel: Record<ArgumentStatus, string> = {
+  primary: '主线',
+  backup: '备用',
+  dropped: '放弃',
+  unassigned: '应急',
+}
+
 function App() {
-  const [mode, setMode] = useState<'prep' | 'arena'>('prep')
-  const [debateConfig, setDebateConfig] = useState<DebateConfig>(defaultDebateConfig)
-  const [arenaConfig, setArenaConfig] = useState<ArenaConfig>(defaultArenaConfig)
-  const [session, setSession] = useState<DebateSession>(() => createDebateSession(defaultDebateConfig))
-  const [arena, setArena] = useState<ArenaResult>(() => createArenaResult(defaultArenaConfig))
-  const [copyState, setCopyState] = useState('Copy report')
+  const [config, setConfig] = useState<HumanPrepConfig>(defaultConfig)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ArgumentStatus>>({})
+  const [copyState, setCopyState] = useState('复制备赛包')
+  const presets = useMemo(() => getDebateFormatPresets(), [])
+  const session = useMemo(() => createHumanPrepSession(config, statusOverrides), [config, statusOverrides])
 
-  function runDebate(event: FormEvent) {
-    event.preventDefault()
-    setSession(createDebateSession(debateConfig))
-    setCopyState('Copy report')
+  function updateConfig(next: HumanPrepConfig) {
+    setConfig(next)
+    setCopyState('复制备赛包')
   }
 
-  function runArena(event: FormEvent) {
+  function rerunPrep(event: FormEvent) {
     event.preventDefault()
-    setArena(createArenaResult(arenaConfig))
+    setStatusOverrides({})
+    setCopyState('复制备赛包')
   }
 
-  async function copyReport() {
-    await navigator.clipboard.writeText(session.report)
-    setCopyState('Copied')
+  function applyAutoSelect() {
+    const autoSelection = autoSelectArguments(session.discovery.candidateCards)
+    setStatusOverrides(autoSelection.statusById)
+    setConfig((current) => ({ ...current, strategyMode: 'ai-auto' }))
+    setCopyState('复制备赛包')
+  }
+
+  function updateCardStatus(card: ArgumentCard, status: ArgumentStatus) {
+    const nextStatuses = { ...session.selection.statusById }
+
+    if (status === 'primary') {
+      const currentPrimary = session.discovery.candidateCards.filter(
+        (candidate) =>
+          candidate.side === card.side &&
+          candidate.id !== card.id &&
+          session.selection.statusById[candidate.id] === 'primary',
+      )
+      if (currentPrimary.length >= 3) {
+        const demoted = currentPrimary[currentPrimary.length - 1]
+        nextStatuses[demoted.id] = 'backup'
+      }
+    }
+
+    nextStatuses[card.id] = status
+    setStatusOverrides(nextStatuses)
+    setConfig((current) => ({ ...current, strategyMode: 'human-quick' }))
+    setCopyState('复制备赛包')
+  }
+
+  async function copyPrepPack() {
+    try {
+      await navigator.clipboard.writeText(session.prepPack)
+      setCopyState('已复制')
+    } catch {
+      setCopyState('复制失败')
+    }
   }
 
   return (
     <main className="shell">
-      <header className="topbar">
+      <header className="app-header">
         <div>
           <p className="eyebrow">AI Debate Lab</p>
-          <h1>Debate workbench</h1>
+          <h1>人类备赛工作台</h1>
         </div>
-        <nav className="mode-switch" aria-label="Mode switcher">
-          <button className={mode === 'prep' ? 'active' : ''} onClick={() => setMode('prep')} type="button">
-            Human prep
-          </button>
-          <button className={mode === 'arena' ? 'active' : ''} onClick={() => setMode('arena')} type="button">
-            Model arena
-          </button>
-        </nav>
+        <span className="future-pill">Model Arena · future</span>
       </header>
 
-      {mode === 'prep' ? (
-        <section className="workspace">
-          <form className="panel controls" onSubmit={runDebate}>
-            <p className="eyebrow">Prepare a debate</p>
-            <label>
-              Motion
-              <textarea
-                value={debateConfig.motion}
-                onChange={(event) => setDebateConfig({ ...debateConfig, motion: event.target.value })}
-                rows={4}
-              />
-            </label>
-            <div className="two-col">
-              <label>
-                Pro role
-                <input
-                  value={debateConfig.proRole}
-                  onChange={(event) => setDebateConfig({ ...debateConfig, proRole: event.target.value })}
-                />
-              </label>
-              <label>
-                Con role
-                <input
-                  value={debateConfig.conRole}
-                  onChange={(event) => setDebateConfig({ ...debateConfig, conRole: event.target.value })}
-                />
-              </label>
-            </div>
-            <div className="two-col">
-              <label>
-                Rounds
-                <input
-                  max={5}
-                  min={1}
-                  type="number"
-                  value={debateConfig.roundCount}
-                  onChange={(event) => setDebateConfig({ ...debateConfig, roundCount: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Judge style
-                <select
-                  value={debateConfig.judgeStyle}
-                  onChange={(event) => setDebateConfig({ ...debateConfig, judgeStyle: event.target.value as JudgeStyle })}
-                >
-                  {judgeStyles.map((style) => (
-                    <option key={style.value} value={style.value}>
-                      {style.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <button className="primary" type="submit">Run debate</button>
-          </form>
+      <section className="workspace">
+        <SetupPanel
+          config={config}
+          presets={presets}
+          session={session}
+          onAutoSelect={applyAutoSelect}
+          onChange={updateConfig}
+          onSubmit={rerunPrep}
+        />
 
-          <section className="results">
-            <JudgePanel session={session} onCopy={copyReport} copyState={copyState} />
-            <TurnSheet session={session} />
-            <Roadmap title="Attack route" items={session.roadmap.attacks} />
-            <Roadmap title="Defense route" items={session.roadmap.defenses} />
-            <Roadmap title="Cross-exam questions" items={session.roadmap.crossExamination} />
-            <Roadmap title="Prep priorities" items={session.roadmap.prepPriorities} />
-          </section>
+        <section className="flow">
+          <DiscoveryPanel session={session} onSetStatus={updateCardStatus} />
+          <SimulationPanel iterations={session.iterations} format={session.format} />
+          <FinalRoutePanel routeMap={session.finalRouteMap} />
+          <ExportPanel copyState={copyState} prepPack={session.prepPack} onCopy={copyPrepPack} />
         </section>
-      ) : (
-        <section className="workspace">
-          <form className="panel controls" onSubmit={runArena}>
-            <p className="eyebrow">Benchmark models</p>
-            <label>
-              Benchmark motion
-              <textarea
-                value={arenaConfig.motion}
-                onChange={(event) => setArenaConfig({ ...arenaConfig, motion: event.target.value })}
-                rows={4}
-              />
-            </label>
-            <div className="two-col">
-              <label>
-                Model A
-                <input value={arenaConfig.modelA} onChange={(event) => setArenaConfig({ ...arenaConfig, modelA: event.target.value })} />
-              </label>
-              <label>
-                Model B
-                <input value={arenaConfig.modelB} onChange={(event) => setArenaConfig({ ...arenaConfig, modelB: event.target.value })} />
-              </label>
-            </div>
-            <div className="two-col">
-              <label>
-                Rounds per side
-                <input
-                  max={5}
-                  min={1}
-                  type="number"
-                  value={arenaConfig.roundCount}
-                  onChange={(event) => setArenaConfig({ ...arenaConfig, roundCount: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Judge style
-                <select
-                  value={arenaConfig.judgeStyle}
-                  onChange={(event) => setArenaConfig({ ...arenaConfig, judgeStyle: event.target.value as JudgeStyle })}
-                >
-                  {judgeStyles.map((style) => (
-                    <option key={style.value} value={style.value}>
-                      {style.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <button className="primary" type="submit">Run side-swap arena</button>
-          </form>
-
-          <section className="results">
-            <article className="panel">
-              <p className="eyebrow">Leaderboard</p>
-              <h2>Side-adjusted result</h2>
-              <div className="leaderboard">
-                {arena.leaderboard.map((entry, index) => (
-                  <div className="leader-row" key={entry.model}>
-                    <b>#{index + 1}</b>
-                    <strong>{entry.model}</strong>
-                    <span>{entry.score} pts</span>
-                    <small>{entry.wins}W {entry.losses}L {entry.ties}T · margin {entry.avgMargin}</small>
-                  </div>
-                ))}
-              </div>
-            </article>
-            {arena.matches.map((match) => (
-              <article className="panel match" key={match.id}>
-                <p className="eyebrow">Side-swap match</p>
-                <h2>{match.proModel} vs {match.conModel}</h2>
-                <div className="score-grid">
-                  <div><span>Pro</span><strong>{match.proModel}</strong><b>{match.proScore}</b></div>
-                  <div><span>Con</span><strong>{match.conModel}</strong><b>{match.conScore}</b></div>
-                </div>
-                <p className="ballot-line">Winner: {match.winner}</p>
-                {match.judge.ballot.map((line) => <p className="ballot-line" key={line}>{line}</p>)}
-              </article>
-            ))}
-          </section>
-        </section>
-      )}
+      </section>
     </main>
   )
 }
 
-function JudgePanel({ session, onCopy, copyState }: { session: DebateSession; onCopy: () => void; copyState: string }) {
-  const winner = session.judge.winner === 'tie' ? 'Tie' : session.judge.winner === 'pro' ? session.config.proRole : session.config.conRole
+function SetupPanel({
+  config,
+  presets,
+  session,
+  onAutoSelect,
+  onChange,
+  onSubmit,
+}: {
+  config: HumanPrepConfig
+  presets: DebateFormatPreset[]
+  session: HumanPrepSession
+  onAutoSelect: () => void
+  onChange: (config: HumanPrepConfig) => void
+  onSubmit: (event: FormEvent) => void
+}) {
+  const selectedPrimaryCount = session.selection.sides.reduce((sum, side) => sum + side.primary.length, 0)
+  const selectedBackupCount = session.selection.sides.reduce((sum, side) => sum + side.backup.length, 0)
 
   return (
-    <article className="panel judge-card">
-      <div>
-        <p className="eyebrow">Judge ballot</p>
-        <h2>{winner}</h2>
-        <p>{session.config.motion}</p>
+    <form className="setup-panel" onSubmit={onSubmit}>
+      <div className="field">
+        <label htmlFor="topic">辩题</label>
+        <textarea
+          id="topic"
+          rows={4}
+          value={config.topic}
+          onChange={(event) => onChange({ ...config, topic: event.target.value })}
+        />
       </div>
-      <div className="score-grid">
-        <div><span>Pro</span><strong>{session.config.proRole}</strong><b>{session.judge.pro.total}</b></div>
-        <div><span>Con</span><strong>{session.config.conRole}</strong><b>{session.judge.con.total}</b></div>
-      </div>
-      {session.judge.ballot.map((line) => <p className="ballot-line" key={line}>{line}</p>)}
-      <button className="secondary" onClick={onCopy} type="button">{copyState}</button>
-    </article>
-  )
-}
 
-function TurnSheet({ session }: { session: DebateSession }) {
-  return (
-    <article className="panel turn-sheet">
-      <p className="eyebrow">Turn sheet</p>
-      <h2>Generated rounds</h2>
-      {session.turns.map((turn) => (
-        <details key={turn.id} open={turn.round === 1}>
-          <summary>Round {turn.round} · {turn.side.toUpperCase()} · {turn.role}</summary>
-          <p><strong>Claim:</strong> {turn.claim}</p>
-          <p><strong>Warrant:</strong> {turn.warrant}</p>
-          <p><strong>Evidence:</strong> {turn.evidence}</p>
-          <p><strong>Impact:</strong> {turn.impact}</p>
-          <p><strong>Attack:</strong> {turn.attacks.join('; ')}</p>
-          <p><strong>Defense:</strong> {turn.defenses.join('; ')}</p>
-        </details>
-      ))}
-    </article>
-  )
-}
-
-function Roadmap({ title, items }: { title: string; items: RoadmapItem[] }) {
-  return (
-    <article className="panel roadmap">
-      <p className="eyebrow">Roadmap</p>
-      <h2>{title}</h2>
-      {items.map((item) => (
-        <div className="roadmap-item" key={item.label}>
-          <span>{item.priority}</span>
-          <strong>{item.label}</strong>
-          <p>{item.detail}</p>
+      <div className="field">
+        <span className="field-label">我方</span>
+        <div className="segmented" role="group" aria-label="选择我方">
+          {sideOptions.map((option) => (
+            <button
+              className={config.side === option.value ? 'selected' : ''}
+              key={option.value}
+              onClick={() => onChange({ ...config, side: option.value })}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="format">赛制</label>
+        <select
+          id="format"
+          value={config.formatId}
+          onChange={(event) => onChange({ ...config, formatId: event.target.value as HumanPrepConfig['formatId'] })}
+        >
+          {presets.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+        <p className="format-note">{session.format.description}</p>
+      </div>
+
+      <div className="compact-grid">
+        <div className="field">
+          <label htmlFor="iteration-count">迭代次数</label>
+          <input
+            id="iteration-count"
+            max={5}
+            min={1}
+            type="number"
+            value={config.iterationCount}
+            onChange={(event) => onChange({ ...config, iterationCount: Number(event.target.value) })}
+          />
+        </div>
+
+        <div className="field">
+          <span className="field-label">策略模式</span>
+          <div className="segmented stacked" role="group" aria-label="选择策略模式">
+            {strategyModes.map((mode) => (
+              <button
+                className={config.strategyMode === mode.value ? 'selected' : ''}
+                key={mode.value}
+                onClick={() => onChange({ ...config, strategyMode: mode.value })}
+                type="button"
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="setup-actions">
+        <button className="primary-action" type="button" onClick={onAutoSelect}>
+          AI 自动选择
+        </button>
+        <button className="secondary-action" type="submit">
+          重新生成
+        </button>
+      </div>
+
+      <div className="selection-meter" aria-label="当前选择概览">
+        <div>
+          <span>主线</span>
+          <strong>{selectedPrimaryCount}</strong>
+        </div>
+        <div>
+          <span>备用</span>
+          <strong>{selectedBackupCount}</strong>
+        </div>
+        <div>
+          <span>迭代</span>
+          <strong>{session.iterations.length}</strong>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+function DiscoveryPanel({
+  session,
+  onSetStatus,
+}: {
+  session: HumanPrepSession
+  onSetStatus: (card: ArgumentCard, status: ArgumentStatus) => void
+}) {
+  return (
+    <section className="stage-section">
+      <SectionHeader eyebrow="Argument Discovery" title="论点发现" />
+      <div className="card-grid">
+        {session.discovery.candidateCards.map((card) => (
+          <ArgumentCardView
+            card={card}
+            key={card.id}
+            status={session.selection.statusById[card.id] ?? 'unassigned'}
+            onSetStatus={onSetStatus}
+          />
+        ))}
+      </div>
+
+      <div className="opponent-panel">
+        <h3>对方可能主打</h3>
+        <div className="opponent-list">
+          {session.discovery.opponentLikelyArguments.map((argument) => (
+            <article className="opponent-row" key={argument.id}>
+              <div>
+                <span>{sideLabel[argument.side]} · {argument.likelyStage}</span>
+                <strong>{argument.title}</strong>
+              </div>
+              <p>{argument.claim}</p>
+              <b>{argument.threatScore}</b>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ArgumentCardView({
+  card,
+  status,
+  onSetStatus,
+}: {
+  card: ArgumentCard
+  status: ArgumentStatus
+  onSetStatus: (card: ArgumentCard, status: ArgumentStatus) => void
+}) {
+  return (
+    <article className={`argument-card is-${status}`}>
+      <div className="card-topline">
+        <span>{sideLabel[card.side]}</span>
+        <span>{statusLabel[status]}</span>
+      </div>
+      <h3>{card.title}</h3>
+      <p className="claim">{card.claim}</p>
+
+      <dl className="card-facts">
+        <div>
+          <dt>意义</dt>
+          <dd>{card.whyItMatters}</dd>
+        </div>
+        <div>
+          <dt>证据</dt>
+          <dd>{card.evidenceType}</dd>
+        </div>
+        <div>
+          <dt>最强攻击</dt>
+          <dd>{card.strongestAttack}</dd>
+        </div>
+        <div>
+          <dt>最佳防守</dt>
+          <dd>{card.bestDefense}</dd>
+        </div>
+      </dl>
+
+      <div className="score-row">
+        <ScorePill label="强度" value={card.strengthScore} />
+        <ScorePill label="风险" value={card.riskScore} />
+        <span className="recommendation">{card.recommendedRole}</span>
+      </div>
+
+      <div className="card-actions" aria-label={`${card.title} 状态`}>
+        <button
+          className={status === 'primary' ? 'active' : ''}
+          onClick={() => onSetStatus(card, 'primary')}
+          type="button"
+        >
+          主线
+        </button>
+        <button
+          className={status === 'backup' ? 'active' : ''}
+          onClick={() => onSetStatus(card, 'backup')}
+          type="button"
+        >
+          备用
+        </button>
+        <button
+          className={status === 'dropped' ? 'active danger' : ''}
+          onClick={() => onSetStatus(card, 'dropped')}
+          type="button"
+        >
+          放弃
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function SimulationPanel({
+  iterations,
+  format,
+}: {
+  iterations: SimulationIteration[]
+  format: DebateFormatPreset
+}) {
+  return (
+    <section className="stage-section">
+      <SectionHeader eyebrow={format.shortName} title="策略模拟" />
+      <div className="iteration-list">
+        {iterations.map((iteration, index) => (
+          <details className="iteration-card" key={iteration.id} open={index < 2}>
+            <summary>
+              <span>第{iteration.iteration}轮 · {sideLabel[iteration.side]}</span>
+              <b>{iteration.routeHealth}</b>
+            </summary>
+            <div className="iteration-body">
+              <ResultBlock title="有效" lines={iteration.worked} />
+              <ResultBlock title="受攻" lines={iteration.gotAttacked} />
+              <ResultBlock title="调整" lines={iteration.replaced} />
+              <p className="why-line">{iteration.why}</p>
+              <div className="timeline">
+                {iteration.timeline.map((stage) => (
+                  <div className="timeline-row" key={stage.stageId}>
+                    <div>
+                      <strong>{stage.stageName}</strong>
+                      <span>{stage.speaker} · {stage.duration}</span>
+                    </div>
+                    <p>{stage.move}</p>
+                    <p>{stage.pressure}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function FinalRoutePanel({ routeMap }: { routeMap: FinalRouteMap }) {
+  return (
+    <section className="stage-section">
+      <SectionHeader eyebrow="Final Route Map" title="最终路线图" />
+      <div className="route-layout">
+        {routeMap.routes.map((route) => (
+          <article className="route-panel" key={route.side}>
+            <h3>{sideLabel[route.side]}主线</h3>
+            <ol className="core-list">
+              {route.coreArguments.map((core) => (
+                <li key={core.card.id}>
+                  <span>{core.order}</span>
+                  <div>
+                    <strong>{core.card.title}</strong>
+                    <p>{core.roleInOpening}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="opening-box">
+              {route.openingStructure.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="map-grid">
+        <MapBlock title="攻防地图">
+          {routeMap.attackDefenseMap.map((pair) => (
+            <div className="map-row" key={`${pair.side}-${pair.opponentAttack}`}>
+              <strong>{sideLabel[pair.side]}</strong>
+              <p>{pair.opponentAttack}</p>
+              <p>{pair.response}</p>
+              <p>{pair.backupResponse}</p>
+            </div>
+          ))}
+        </MapBlock>
+
+        <MapBlock title="备用路线库">
+          {routeMap.abandonedPreparedRoutes.map((route) => (
+            <div className="map-row" key={`${route.side}-${route.title}`}>
+              <strong>{sideLabel[route.side]} · {route.title}</strong>
+              <p>{route.trigger}</p>
+              <p>{route.use}</p>
+            </div>
+          ))}
+        </MapBlock>
+
+        <MapBlock title="证据清单">
+          {routeMap.evidenceChecklist.map((item) => (
+            <div className="evidence-row" key={`${item.side}-${item.argumentTitle}`}>
+              <span>{item.priority}</span>
+              <strong>{sideLabel[item.side]} · {item.argumentTitle}</strong>
+              <p>{item.evidenceType}</p>
+              <p>{item.note}</p>
+            </div>
+          ))}
+        </MapBlock>
+      </div>
+    </section>
+  )
+}
+
+function ExportPanel({
+  copyState,
+  prepPack,
+  onCopy,
+}: {
+  copyState: string
+  prepPack: string
+  onCopy: () => void
+}) {
+  return (
+    <section className="stage-section export-section">
+      <div className="export-header">
+        <SectionHeader eyebrow="Prep Pack" title="导出备赛包" />
+        <button className="primary-action" onClick={onCopy} type="button">
+          {copyState}
+        </button>
+      </div>
+      <pre className="prep-pack">{prepPack}</pre>
+    </section>
+  )
+}
+
+function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <div className="section-header">
+      <p className="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+    </div>
+  )
+}
+
+function ScorePill({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="score-pill">
+      {label}
+      <b>{value}</b>
+    </span>
+  )
+}
+
+function ResultBlock({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="result-block">
+      <span>{title}</span>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
       ))}
+    </div>
+  )
+}
+
+function MapBlock({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <article className="map-block">
+      <h3>{title}</h3>
+      {children}
     </article>
   )
 }

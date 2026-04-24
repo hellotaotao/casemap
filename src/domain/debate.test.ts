@@ -1,51 +1,98 @@
 import { describe, expect, it } from 'vitest'
-import { createArenaResult, createDebateSession } from './debate'
-import type { ArenaConfig, DebateConfig } from './types'
+import {
+  autoSelectArguments,
+  createFinalRouteMap,
+  createHumanPrepSession,
+  generateArgumentDiscovery,
+  getDebateFormatPresets,
+} from './debate'
+import type { HumanPrepConfig } from './types'
 
-const debateConfig: DebateConfig = {
-  motion: 'AI debate tools should be used to prepare human debaters',
-  proRole: 'Affirmative coach',
-  conRole: 'Negative sparring partner',
-  roundCount: 3,
-  judgeStyle: 'policy',
+const baseConfig: HumanPrepConfig = {
+  topic: '大学应不应该强制学生使用 AI 工具完成课程学习',
+  side: 'affirmative',
+  formatId: 'chinese-four-v-four',
+  iterationCount: 3,
+  strategyMode: 'ai-auto',
 }
 
-const arenaConfig: ArenaConfig = {
-  motion: 'AI model debates are a useful reasoning benchmark',
-  modelA: 'GPT-5.5',
-  modelB: 'Claude Strategy',
-  roundCount: 2,
-  judgeStyle: 'executive',
-}
+describe('human debate prep domain', () => {
+  it('provides Chinese debate format presets with usable stage timelines', () => {
+    const presets = getDebateFormatPresets()
 
-describe('debate workbench domain', () => {
-  it('generates a usable prep session from a human debate configuration', () => {
-    const session = createDebateSession(debateConfig)
-
-    expect(session.config.motion).toBe(debateConfig.motion)
-    expect(session.turns).toHaveLength(6)
-    expect(session.judge.ballot.length).toBeGreaterThanOrEqual(3)
-    expect(session.roadmap.attacks).toHaveLength(3)
-    expect(session.roadmap.defenses).toHaveLength(3)
-    expect(session.report).toContain('# AI Debate Lab Prep Report')
-    expect(session.report).toContain('Cross-Ex Questions')
+    expect(presets).toHaveLength(3)
+    expect(presets.map((preset) => preset.id)).toEqual([
+      'chinese-four-v-four',
+      'xin-guo-bian',
+      'campus-quick',
+    ])
+    expect(presets[0].stages.map((stage) => stage.name)).toContain('自由辩论')
+    expect(presets[1].stages.map((stage) => stage.name)).toContain('质询小结')
   })
 
-  it('clamps debate rounds into a safe local prototype range', () => {
-    const session = createDebateSession({ ...debateConfig, roundCount: 99 })
+  it('generates deterministic candidate argument cards and opponent likely arguments', () => {
+    const first = generateArgumentDiscovery(baseConfig)
+    const second = generateArgumentDiscovery(baseConfig)
 
-    expect(session.config.roundCount).toBe(5)
-    expect(session.turns).toHaveLength(10)
+    expect(first).toEqual(second)
+    expect(first.candidateCards).toHaveLength(10)
+    expect(first.candidateCards.every((card) => card.side === 'affirmative')).toBe(true)
+    expect(first.candidateCards[0]).toMatchObject({
+      claim: expect.stringContaining(baseConfig.topic),
+      recommendedRole: 'primary',
+    })
+    expect(first.opponentLikelyArguments.length).toBeGreaterThanOrEqual(5)
+    expect(first.opponentLikelyArguments[0].againstSide).toBe('affirmative')
   })
 
-  it('runs a side-swapped model arena benchmark with a leaderboard', () => {
-    const arena = createArenaResult(arenaConfig)
+  it('auto-selects a three-argument main strategy and backup bank', () => {
+    const discovery = generateArgumentDiscovery(baseConfig)
+    const selection = autoSelectArguments(discovery.candidateCards)
+    const affirmative = selection.sides[0]
 
-    expect(arena.matches).toHaveLength(2)
-    expect(arena.matches[0].proModel).toBe('GPT-5.5')
-    expect(arena.matches[0].conModel).toBe('Claude Strategy')
-    expect(arena.matches[1].proModel).toBe('Claude Strategy')
-    expect(arena.matches[1].conModel).toBe('GPT-5.5')
-    expect(arena.leaderboard.map((entry) => entry.model).sort()).toEqual(['Claude Strategy', 'GPT-5.5'])
+    expect(affirmative.side).toBe('affirmative')
+    expect(affirmative.primary).toHaveLength(3)
+    expect(affirmative.backup.length).toBeGreaterThanOrEqual(3)
+    expect(Object.values(selection.statusById).filter((status) => status === 'primary')).toHaveLength(3)
+  })
+
+  it('simulates configured iterations using the selected format stages', () => {
+    const session = createHumanPrepSession(baseConfig)
+
+    expect(session.iterations).toHaveLength(3)
+    expect(session.iterations[0].timeline.map((stage) => stage.stageName)).toContain('正一立论')
+    expect(session.iterations[0].worked.length).toBeGreaterThan(0)
+    expect(session.iterations[1].replaced[0]).toMatch(/保留|降为/)
+  })
+
+  it('builds a final route map and exportable prep pack', () => {
+    const session = createHumanPrepSession(baseConfig)
+    const routeMap = createFinalRouteMap(session.selection, session.discovery.opponentLikelyArguments)
+    const firstRoute = routeMap.routes[0]
+
+    expect(firstRoute.coreArguments).toHaveLength(3)
+    expect(firstRoute.openingStructure.join('\n')).toContain('先定判准')
+    expect(routeMap.attackDefenseMap.length).toBeGreaterThanOrEqual(4)
+    expect(routeMap.abandonedPreparedRoutes.length).toBeGreaterThan(0)
+    expect(routeMap.evidenceChecklist.length).toBeGreaterThanOrEqual(6)
+    expect(session.prepPack).toContain('# AI Debate Lab 人类备赛包')
+    expect(session.prepPack).toContain('## 攻防地图')
+  })
+
+  it('supports preparing both sides without changing deterministic behavior', () => {
+    const bothConfig: HumanPrepConfig = {
+      ...baseConfig,
+      side: 'both',
+      formatId: 'xin-guo-bian',
+      iterationCount: 2,
+      strategyMode: 'human-quick',
+    }
+    const session = createHumanPrepSession(bothConfig)
+
+    expect(session.discovery.candidateCards).toHaveLength(20)
+    expect(session.selection.sides.map((side) => side.side)).toEqual(['affirmative', 'negative'])
+    expect(session.selection.sides.every((side) => side.primary.length === 3)).toBe(true)
+    expect(session.iterations).toHaveLength(4)
+    expect(session.finalRouteMap.routes).toHaveLength(2)
   })
 })
