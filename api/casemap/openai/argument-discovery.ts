@@ -3,7 +3,7 @@ import {
   parseOpenAiArgumentDiscoveryResponse,
   resolveOpenAiArgumentModel,
   type ArgumentDiscoveryGenerationRequest,
-} from '../../../src/domain/openAiArgumentGeneration'
+} from '../../../src/domain/openAiArgumentGeneration.js'
 
 declare const process: { env: Record<string, string | undefined> }
 declare const fetch: (url: string, init: OpenAiFetchInit) => Promise<OpenAiFetchResponse>
