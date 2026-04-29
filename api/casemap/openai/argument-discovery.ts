@@ -67,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       body: JSON.stringify({
-        max_completion_tokens: 3000,
+        max_completion_tokens: 8000,
         messages: prompt.messages,
         model,
         response_format: {
