@@ -1,4 +1,4 @@
-import { stableHash } from './deterministic'
+import { stableHash } from './deterministic.js'
 
 export type PreparedSide = 'affirmative' | 'negative'
 
