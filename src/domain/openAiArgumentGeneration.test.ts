@@ -5,6 +5,7 @@ import {
   defaultOpenAiArgumentModel,
   parseOpenAiArgumentDiscoveryResponse,
   parseJsonContent,
+  resolveOpenAiArgumentModel,
 } from './openAiArgumentGeneration'
 import type { HumanPrepConfig } from './types'
 
@@ -59,6 +60,30 @@ const openAiFixture = {
 describe('OpenAI argument discovery prompt and parser', () => {
   it('uses gpt-5.4 as the default cost/performance OpenAI argument model', () => {
     expect(defaultOpenAiArgumentModel).toBe('gpt-5.4')
+  })
+
+  it('resolves the server-side OpenAI argument model with a constrained quality override', () => {
+    expect(resolveOpenAiArgumentModel({})).toEqual({
+      model: 'gpt-5.4',
+      source: 'default',
+    })
+    expect(resolveOpenAiArgumentModel({ OPENAI_MODEL: 'gpt-5.5' })).toEqual({
+      model: 'gpt-5.5',
+      source: 'OPENAI_MODEL',
+    })
+    expect(resolveOpenAiArgumentModel({ CASEMAP_OPENAI_MODEL: 'gpt-5.5', OPENAI_MODEL: 'gpt-5.4' })).toEqual({
+      model: 'gpt-5.5',
+      source: 'CASEMAP_OPENAI_MODEL',
+    })
+    expect(resolveOpenAiArgumentModel({ AI_DEBATE_OPENAI_MODEL: 'gpt-5.5', OPENAI_MODEL: 'gpt-5.4' })).toEqual({
+      model: 'gpt-5.5',
+      source: 'AI_DEBATE_OPENAI_MODEL',
+    })
+
+    const invalidOverride = resolveOpenAiArgumentModel({ CASEMAP_OPENAI_MODEL: 'gpt-unknown' })
+
+    expect(invalidOverride.model).toBe('gpt-5.4')
+    expect(invalidOverride.warning).toContain('不支持')
   })
 
   it('builds a structured JSON prompt for the current motion, format, sides and roles', () => {

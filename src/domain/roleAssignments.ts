@@ -53,7 +53,8 @@ export type RoleAssignmentsStorage = {
   setItem: (key: string, value: string) => void
 }
 
-export const roleAssignmentsStorageKey = 'ai-debate-lab.role-assignments.v1'
+export const roleAssignmentsStorageKey = 'casemap.role-assignments.v1'
+const legacyRoleAssignmentsStorageKey = 'ai-debate-lab.role-assignments.v1'
 
 export const debateAgentRoles: Array<{ id: DebateAgentRole; label: string; description: string }> = [
   {
@@ -133,9 +134,10 @@ export function createRoleAssignmentsRepository(storage: RoleAssignmentsStorage)
   return {
     clear() {
       storage.removeItem(roleAssignmentsStorageKey)
+      storage.removeItem(legacyRoleAssignmentsStorageKey)
     },
     load(): RoleAssignments {
-      const raw = storage.getItem(roleAssignmentsStorageKey)
+      const raw = storage.getItem(roleAssignmentsStorageKey) ?? storage.getItem(legacyRoleAssignmentsStorageKey)
 
       if (!raw) return createDefaultRoleAssignments()
 

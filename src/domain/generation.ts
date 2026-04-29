@@ -63,9 +63,9 @@ export function createLocalMockArgumentDiscoveryGenerator(): ArgumentDiscoveryGe
 export function createOpenAiDevArgumentDiscoveryGenerator(fetcher: FetchLike = fetch): ArgumentDiscoveryGenerator {
   return {
     id: 'openai-dev',
-    label: 'OpenAI dev endpoint',
+    label: 'CaseMap OpenAI 生成接口',
     async generate(request) {
-      const response = await fetcher('/api/ai-debate/openai/argument-discovery', {
+      const response = await fetcher('/api/casemap/openai/argument-discovery', {
         body: JSON.stringify(request),
         headers: {
           'Content-Type': 'application/json',
@@ -75,11 +75,11 @@ export function createOpenAiDevArgumentDiscoveryGenerator(fetcher: FetchLike = f
       const payload = await readJsonSafely(response)
 
       if (!response.ok) {
-        throw new Error(payload.error || payload.message || `OpenAI dev endpoint failed: HTTP ${response.status}`)
+        throw new Error(payload.error || payload.message || `CaseMap OpenAI 生成接口失败：HTTP ${response.status}`)
       }
 
       if (!payload.discovery?.candidateCards?.length || !payload.discovery?.opponentLikelyArguments?.length) {
-        throw new Error('OpenAI dev endpoint returned an empty discovery payload.')
+        throw new Error('CaseMap OpenAI 生成接口返回了空的论点发现结果。')
       }
 
       return {

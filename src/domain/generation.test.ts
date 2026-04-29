@@ -34,7 +34,7 @@ describe('argument discovery generation provider interface', () => {
     const request = createArgumentDiscoveryGenerationRequest(baseConfig, {})
     const failingProvider: ArgumentDiscoveryGenerator = {
       id: 'openai-dev',
-      label: 'OpenAI dev endpoint',
+      label: 'CaseMap OpenAI 生成接口',
       async generate() {
         throw new Error('Missing OPENAI_API_KEY')
       },

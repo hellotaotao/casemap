@@ -86,6 +86,22 @@ export type ArgumentDiscovery = {
 }
 
 export const defaultOpenAiArgumentModel = 'gpt-5.4'
+export const qualityOpenAiArgumentModel = 'gpt-5.5'
+export const supportedOpenAiArgumentModels = [defaultOpenAiArgumentModel, qualityOpenAiArgumentModel] as const
+
+export type OpenAiArgumentModel = typeof supportedOpenAiArgumentModels[number]
+
+export type OpenAiArgumentModelResolution = {
+  model: OpenAiArgumentModel
+  source: 'default' | 'CASEMAP_OPENAI_MODEL' | 'AI_DEBATE_OPENAI_MODEL' | 'OPENAI_MODEL'
+  warning?: string
+}
+
+export type OpenAiArgumentModelEnv = {
+  CASEMAP_OPENAI_MODEL?: string
+  AI_DEBATE_OPENAI_MODEL?: string
+  OPENAI_MODEL?: string
+}
 
 export type ArgumentDiscoveryGenerationRequest = {
   config: HumanPrepConfig
@@ -186,6 +202,34 @@ export const openAiArgumentDiscoveryJsonSchema = {
     },
   },
 } as const
+
+export function resolveOpenAiArgumentModel(env: OpenAiArgumentModelEnv): OpenAiArgumentModelResolution {
+  const caseMapValue = env.CASEMAP_OPENAI_MODEL?.trim()
+  const legacyProductValue = env.AI_DEBATE_OPENAI_MODEL?.trim()
+  const legacyValue = env.OPENAI_MODEL?.trim()
+  const selectedValue = caseMapValue || legacyProductValue || legacyValue
+  const source = caseMapValue
+    ? 'CASEMAP_OPENAI_MODEL'
+    : legacyProductValue
+      ? 'AI_DEBATE_OPENAI_MODEL'
+      : legacyValue
+        ? 'OPENAI_MODEL'
+        : 'default'
+
+  if (!selectedValue) {
+    return { model: defaultOpenAiArgumentModel, source: 'default' }
+  }
+
+  if (isSupportedOpenAiArgumentModel(selectedValue)) {
+    return { model: selectedValue, source }
+  }
+
+  return {
+    model: defaultOpenAiArgumentModel,
+    source,
+    warning: `${source}=${selectedValue} 不支持用于论点发现，已改用 ${defaultOpenAiArgumentModel}。`,
+  }
+}
 
 export function buildOpenAiArgumentDiscoveryPrompt(
   request: ArgumentDiscoveryGenerationRequest,
@@ -447,6 +491,10 @@ function oppositeSide(side: PreparedSide): PreparedSide {
 
 function getRoleLabel(role: DebateAgentRole): string {
   return roleLabels[role]
+}
+
+function isSupportedOpenAiArgumentModel(value: string): value is OpenAiArgumentModel {
+  return supportedOpenAiArgumentModels.includes(value as OpenAiArgumentModel)
 }
 
 function isRecord(value: unknown): value is UnknownRecord {

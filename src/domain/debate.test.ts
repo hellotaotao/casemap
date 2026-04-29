@@ -84,7 +84,7 @@ describe('human debate prep domain', () => {
     expect(routeMap.attackDefenseMap.length).toBeGreaterThanOrEqual(4)
     expect(routeMap.abandonedPreparedRoutes.length).toBeGreaterThan(0)
     expect(routeMap.evidenceChecklist.length).toBeGreaterThanOrEqual(6)
-    expect(session.prepPack).toContain('# AI Debate Lab 人类备赛包')
+    expect(session.prepPack).toContain('# CaseMap 人类备赛包')
     expect(session.prepPack).toContain('## 攻防地图')
   })
 

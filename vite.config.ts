@@ -2,8 +2,8 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import {
   buildOpenAiArgumentDiscoveryPrompt,
-  defaultOpenAiArgumentModel,
   parseOpenAiArgumentDiscoveryResponse,
+  resolveOpenAiArgumentModel,
   type ArgumentDiscoveryGenerationRequest,
 } from './src/domain/openAiArgumentGeneration'
 
@@ -59,9 +59,9 @@ export default defineConfig({
 
 function openAiArgumentGenerationDevEndpoint(): Plugin {
   return {
-    name: 'ai-debate-openai-argument-generation-dev-endpoint',
+    name: 'casemap-openai-argument-generation-dev-endpoint',
     configureServer(server) {
-      server.middlewares.use('/api/ai-debate/openai/argument-discovery', async (req, res) => {
+      server.middlewares.use('/api/casemap/openai/argument-discovery', async (req, res) => {
         const devReq = req as unknown as MiddlewareRequest
         const devRes = res as unknown as MiddlewareResponse
 
@@ -79,14 +79,15 @@ function openAiArgumentGenerationDevEndpoint(): Plugin {
 
         if (!apiKey) {
           sendJson(devRes, 400, {
-            error: 'Missing OPENAI_API_KEY in the Vite dev server environment. Start the app from a shell that has the key loaded (for example via ~/.zshrc).',
+            error: 'Missing OPENAI_API_KEY in the Vite dev server environment. Start the app from a shell that has the key loaded (for example via ~/.env.local sourced by ~/.zshrc).',
           })
           return
         }
 
         try {
           const request = await readGenerationRequest(devReq)
-          const model = process.env.AI_DEBATE_OPENAI_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || defaultOpenAiArgumentModel
+          const modelResolution = resolveOpenAiArgumentModel(process.env)
+          const model = modelResolution.model
           const prompt = buildOpenAiArgumentDiscoveryPrompt(request)
           const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             body: JSON.stringify({
@@ -123,7 +124,9 @@ function openAiArgumentGenerationDevEndpoint(): Plugin {
 
           sendJson(devRes, 200, {
             discovery,
-            message: `已使用 OpenAI ${model} 真实生成论点池。`,
+            message: modelResolution.warning
+              ? `已使用 OpenAI ${model} 真实生成论点池。${modelResolution.warning}`
+              : `已使用 OpenAI ${model} 真实生成论点池。`,
             model,
           })
         } catch (error) {

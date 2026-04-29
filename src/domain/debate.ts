@@ -613,7 +613,7 @@ export function exportPrepPack(
 ): string {
   const sideText = config.side === 'both' ? '双方都准备' : sideLabels[config.side]
   const lines = [
-    '# AI Debate Lab 人类备赛包',
+    '# CaseMap 人类备赛包',
     '',
     `辩题：${config.topic}`,
     `我方：${sideText}`,

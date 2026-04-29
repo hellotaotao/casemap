@@ -164,7 +164,7 @@ function App() {
 
     setIsGeneratingArgumentPool(true)
     setGenerationMode('openai-dev')
-    setGenerationState({ message: '正在调用本地 OpenAI dev endpoint 生成论点池…', status: 'loading' })
+    setGenerationState({ message: '正在调用本地 OpenAI 生成接口生成论点池…', status: 'loading' })
 
     try {
       const result = await generateArgumentDiscoveryWithFallback(openAiGenerator, localMockGenerator, request)
@@ -271,10 +271,10 @@ function App() {
     <main className="shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">AI Debate Lab</p>
-          <h1>人类备赛工作台</h1>
+          <p className="eyebrow">CaseMap</p>
+          <h1>中文辩论 AI 备赛与攻防地图</h1>
         </div>
-        <span className="future-pill">Model Arena · future</span>
+        <span className="future-pill">模型竞技场 · 规划中</span>
       </header>
 
       <section className="workspace">

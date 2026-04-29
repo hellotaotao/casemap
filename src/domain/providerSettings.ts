@@ -9,7 +9,8 @@ import {
 
 export type ProviderSettingsStorage = Pick<Storage, 'getItem' | 'removeItem' | 'setItem'>
 
-export const providerSettingsStorageKey = 'ai-debate-lab.provider-settings.v1'
+export const providerSettingsStorageKey = 'casemap.provider-settings.v1'
+const legacyProviderSettingsStorageKey = 'ai-debate-lab.provider-settings.v1'
 
 const validStatuses = new Set<ProviderConnectionStatus>([
   'browser-blocked',
@@ -22,9 +23,10 @@ export function createProviderSettingsRepository(storage: ProviderSettingsStorag
   return {
     clear() {
       storage.removeItem(providerSettingsStorageKey)
+      storage.removeItem(legacyProviderSettingsStorageKey)
     },
     load(): ProviderSettings {
-      const raw = storage.getItem(providerSettingsStorageKey)
+      const raw = storage.getItem(providerSettingsStorageKey) ?? storage.getItem(legacyProviderSettingsStorageKey)
 
       if (!raw) return createDefaultProviderSettings()
 
