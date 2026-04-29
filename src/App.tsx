@@ -39,6 +39,12 @@ import type {
   ArgumentCard,
   ArgumentDiscovery,
   ArgumentStatus,
+  DebateMap,
+  DebateMapArgumentNode,
+  DebateMapAttackNode,
+  DebateMapDefenseLink,
+  DebateMapEvidenceGap,
+  DebateMapSideNode,
   DebateFormatPreset,
   FinalRouteMap,
   HumanPrepConfig,
@@ -310,6 +316,7 @@ function App() {
         </aside>
 
         <section className="flow">
+          <DebateMapPanel map={session.debateMap} />
           <DiscoveryPanel session={session} onSetStatus={updateCardStatus} />
           <SimulationPanel iterations={session.iterations} format={session.format} />
           <FinalRoutePanel routeMap={session.finalRouteMap} />
@@ -665,6 +672,151 @@ function SetupPanel({
   )
 }
 
+function DebateMapPanel({ map }: { map: DebateMap }) {
+  const argumentById = new Map(map.argumentNodes.map((node) => [node.id, node]))
+  const attackById = new Map(map.attackNodes.map((node) => [node.id, node]))
+  const gapById = new Map(map.evidenceGaps.map((gap) => [gap.id, gap]))
+  const promptById = new Map(map.freeDebatePrompts.map((prompt) => [prompt.id, prompt]))
+
+  return (
+    <section className="stage-section visual-map-section">
+      <SectionHeader eyebrow="Attack Defense Map" title="结构化攻防地图" />
+
+      <div className="motion-node">
+        <span>中心命题</span>
+        <h3>{map.motion}</h3>
+        <p>{map.centralConflict}</p>
+      </div>
+
+      <div className="visual-map-grid">
+        {map.sideNodes.map((sideNode) => (
+          <DebateMapSideColumn
+            argumentById={argumentById}
+            attackById={attackById}
+            gapById={gapById}
+            key={sideNode.side}
+            map={map}
+            promptById={promptById}
+            sideNode={sideNode}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function DebateMapSideColumn({
+  argumentById,
+  attackById,
+  gapById,
+  map,
+  promptById,
+  sideNode,
+}: {
+  argumentById: Map<string, DebateMapArgumentNode>
+  attackById: Map<string, DebateMapAttackNode>
+  gapById: Map<string, DebateMapEvidenceGap>
+  map: DebateMap
+  promptById: Map<string, DebateMap['freeDebatePrompts'][number]>
+  sideNode: DebateMapSideNode
+}) {
+  const sideArguments = [
+    ...sideNode.coreArgumentIds.map((id) => argumentById.get(id)).filter(isDefined),
+    ...sideNode.backupArgumentIds.map((id) => argumentById.get(id)).filter(isDefined),
+  ]
+  const sideLinks = map.defenseLinks.filter((link) => link.side === sideNode.side)
+
+  return (
+    <article className={`map-side-column side-${sideNode.side}`}>
+      <div className="side-node">
+        <span>{sideNode.label}</span>
+        <p>{sideNode.stance}</p>
+      </div>
+
+      <div className="map-node-stack">
+        {sideArguments.map((argument) => (
+          <VisualArgumentNode gap={argument.evidenceGapId ? gapById.get(argument.evidenceGapId) : undefined} key={argument.id} node={argument} />
+        ))}
+      </div>
+
+      <div className="defense-link-list">
+        {sideLinks.map((link) => (
+          <VisualDefenseLink
+            argument={argumentById.get(link.toArgumentId)}
+            attack={attackById.get(link.fromAttackId)}
+            key={link.id}
+            link={link}
+            prompt={promptById.get(link.freeDebatePromptId)}
+          />
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function VisualArgumentNode({
+  gap,
+  node,
+}: {
+  gap?: DebateMapEvidenceGap
+  node: DebateMapArgumentNode
+}) {
+  return (
+    <div className={`visual-argument-node is-${node.status}`}>
+      <div className="map-node-topline">
+        <span>{statusLabel[node.status]}</span>
+        <span>强 {node.strengthScore} / 风险 {node.riskScore}</span>
+      </div>
+      <strong>{node.title}</strong>
+      <p>{node.claim}</p>
+      {gap ? <EvidenceGapFlag gap={gap} /> : null}
+    </div>
+  )
+}
+
+function VisualDefenseLink({
+  argument,
+  attack,
+  link,
+  prompt,
+}: {
+  argument?: DebateMapArgumentNode
+  attack?: DebateMapAttackNode
+  link: DebateMapDefenseLink
+  prompt?: DebateMap['freeDebatePrompts'][number]
+}) {
+  if (!attack || !argument) return null
+
+  return (
+    <div className="visual-defense-link">
+      <div className="attack-node">
+        <div className="map-node-topline">
+          <span>{sideLabel[attack.side]}攻击</span>
+          <span>{attack.likelyStage} · 威胁 {attack.threatScore}</span>
+        </div>
+        <strong>{attack.title}</strong>
+        <p>{attack.claim}</p>
+      </div>
+      <div className="defense-node">
+        <span>防守连线 → {argument.title}</span>
+        <p>{link.response}</p>
+        <p>{link.backupResponse}</p>
+        {prompt ? <a href={`#${prompt.id}`} id={prompt.id}>{prompt.prompt}</a> : null}
+      </div>
+    </div>
+  )
+}
+
+function EvidenceGapFlag({ gap }: { gap: DebateMapEvidenceGap }) {
+  return (
+    <div className={`evidence-gap-flag gap-${gap.severity}`}>
+      <span>{formatEvidenceGapSeverity(gap.severity)}</span>
+      <p>{gap.evidenceType}</p>
+      <p>{gap.reason}</p>
+    </div>
+  )
+}
+
 function DiscoveryPanel({
   session,
   onSetStatus,
@@ -704,6 +856,10 @@ function DiscoveryPanel({
       </div>
     </section>
   )
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined
 }
 
 function ArgumentCardView({
@@ -965,6 +1121,12 @@ function formatCheckedAt(isoDate: string): string {
     minute: '2-digit',
     month: '2-digit',
   }).format(new Date(isoDate))
+}
+
+function formatEvidenceGapSeverity(severity: DebateMapEvidenceGap['severity']): string {
+  if (severity === 'high') return '高优先证据缺口'
+  if (severity === 'medium') return '中优先证据缺口'
+  return '低优先证据缺口'
 }
 
 function formatRoleChoice(choice: ReturnType<typeof getRoleAssignmentChoices>[number]): string {

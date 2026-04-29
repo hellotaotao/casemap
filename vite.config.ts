@@ -91,18 +91,17 @@ function openAiArgumentGenerationDevEndpoint(): Plugin {
           const prompt = buildOpenAiArgumentDiscoveryPrompt(request)
           const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             body: JSON.stringify({
-              max_tokens: 3000,
+              max_completion_tokens: 3000,
               messages: prompt.messages,
               model,
               response_format: {
                 type: 'json_schema',
                 json_schema: {
-                  name: 'ai_debate_argument_discovery',
+                  name: 'casemap_argument_discovery',
                   schema: prompt.schema,
                   strict: true,
                 },
               },
-              temperature: 0.7,
             }),
             headers: {
               Authorization: `Bearer ${apiKey}`,

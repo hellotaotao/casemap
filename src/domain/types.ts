@@ -148,6 +148,78 @@ export type FinalRouteMap = {
   generatedBy?: GenerationSource
 }
 
+export type DebateMapSideNode = {
+  side: PreparedSide
+  label: string
+  stance: string
+  coreArgumentIds: string[]
+  backupArgumentIds: string[]
+}
+
+export type DebateMapArgumentNode = {
+  id: string
+  side: PreparedSide
+  status: ArgumentStatus
+  title: string
+  claim: string
+  bestDefense: string
+  evidenceType: string
+  strengthScore: number
+  riskScore: number
+  evidenceGapId?: string
+}
+
+export type DebateMapAttackNode = {
+  id: string
+  side: PreparedSide
+  againstSide: PreparedSide
+  title: string
+  claim: string
+  likelyStage: string
+  threatScore: number
+}
+
+export type DebateMapDefenseLink = {
+  id: string
+  side: PreparedSide
+  fromAttackId: string
+  toArgumentId: string
+  response: string
+  backupResponse: string
+  freeDebatePromptId: string
+}
+
+export type EvidenceGapSeverity = 'high' | 'medium' | 'low'
+
+export type DebateMapEvidenceGap = {
+  id: string
+  side: PreparedSide
+  argumentId: string
+  argumentTitle: string
+  evidenceType: string
+  severity: EvidenceGapSeverity
+  reason: string
+}
+
+export type DebateMapFreeDebatePrompt = {
+  id: string
+  side: PreparedSide
+  attackId: string
+  argumentId: string
+  prompt: string
+}
+
+export type DebateMap = {
+  motion: string
+  centralConflict: string
+  sideNodes: DebateMapSideNode[]
+  argumentNodes: DebateMapArgumentNode[]
+  attackNodes: DebateMapAttackNode[]
+  defenseLinks: DebateMapDefenseLink[]
+  evidenceGaps: DebateMapEvidenceGap[]
+  freeDebatePrompts: DebateMapFreeDebatePrompt[]
+}
+
 export type HumanPrepSession = {
   config: HumanPrepConfig
   format: DebateFormatPreset
@@ -156,5 +228,6 @@ export type HumanPrepSession = {
   selection: ArgumentSelection
   iterations: SimulationIteration[]
   finalRouteMap: FinalRouteMap
+  debateMap: DebateMap
   prepPack: string
 }

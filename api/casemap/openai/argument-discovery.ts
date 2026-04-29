@@ -67,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       body: JSON.stringify({
-        max_tokens: 3000,
+        max_completion_tokens: 3000,
         messages: prompt.messages,
         model,
         response_format: {
@@ -78,7 +78,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             strict: true,
           },
         },
-        temperature: 0.7,
       }),
       headers: {
         Authorization: `Bearer ${apiKey}`,

@@ -1,5 +1,6 @@
-import { createSeededRandom, scoreBetween, stableHash } from './deterministic'
 import { createDefaultProviderSettings, type ProviderSettings } from './aiProviders'
+import { createDebateMap } from './debateMap'
+import { createSeededRandom, scoreBetween, stableHash } from './deterministic'
 import {
   createAiRunMetadata,
   createDefaultRoleAssignments,
@@ -582,16 +583,23 @@ export function createHumanPrepSession(
   })
   const iterations = simulateStrategyIterations(normalized, format, selection, discovery.opponentLikelyArguments, aiRun.roles.attackSimulator)
   const finalRouteMap = createFinalRouteMap(selection, discovery.opponentLikelyArguments, aiRun.roles.strategyCoach)
+  const debateMap = createDebateMap({
+    config: normalized,
+    finalRouteMap,
+    opponentLikelyArguments: discovery.opponentLikelyArguments,
+    selection,
+  })
 
   return {
     aiRun,
     config: normalized,
-    format,
+    debateMap,
     discovery,
-    selection,
-    iterations,
+    format,
     finalRouteMap,
+    iterations,
     prepPack: exportPrepPack(normalized, format, discovery, selection, iterations, finalRouteMap, aiRun),
+    selection,
   }
 }
 
