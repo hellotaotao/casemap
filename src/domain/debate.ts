@@ -34,6 +34,7 @@ import type {
 export type DebateGenerationContext = {
   providerSettings?: ProviderSettings
   roleAssignments?: RoleAssignments
+  discoveryOverride?: ArgumentDiscovery
 }
 
 const defaultTopic = '人工智能工具应当用于辅助人类辩手备赛'
@@ -570,7 +571,7 @@ export function createHumanPrepSession(
   const normalized = normalizePrepConfig(config)
   const format = getDebateFormatPreset(normalized.formatId)
   const aiRun = createSessionAiRun(generationContext)
-  const discovery = generateArgumentDiscovery(normalized, aiRun.roles)
+  const discovery = generationContext.discoveryOverride ?? generateArgumentDiscovery(normalized, aiRun.roles)
   const baseSelection =
     normalized.strategyMode === 'ai-auto'
       ? autoSelectArguments(discovery.candidateCards)

@@ -47,7 +47,11 @@ export type RoleAssignmentChoice = {
   status?: ProviderConnectionStatus
 }
 
-export type RoleAssignmentsStorage = Pick<Storage, 'getItem' | 'removeItem' | 'setItem'>
+export type RoleAssignmentsStorage = {
+  getItem: (key: string) => string | null
+  removeItem: (key: string) => void
+  setItem: (key: string, value: string) => void
+}
 
 export const roleAssignmentsStorageKey = 'ai-debate-lab.role-assignments.v1'
 

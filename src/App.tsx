@@ -16,6 +16,14 @@ import {
   createHumanPrepSession,
   getDebateFormatPresets,
 } from './domain/debate'
+import {
+  createArgumentDiscoveryGenerationRequest,
+  createLocalMockArgumentDiscoveryGenerator,
+  createOpenAiDevArgumentDiscoveryGenerator,
+  generateArgumentDiscoveryWithFallback,
+  type ArgumentDiscoveryGenerationResult,
+  type ArgumentDiscoveryGeneratorId,
+} from './domain/generation'
 import { createProviderSettingsRepository } from './domain/providerSettings'
 import {
   assignProviderToRole,
@@ -29,6 +37,7 @@ import {
 } from './domain/roleAssignments'
 import type {
   ArgumentCard,
+  ArgumentDiscovery,
   ArgumentStatus,
   DebateFormatPreset,
   FinalRouteMap,
@@ -73,9 +82,17 @@ const statusLabel: Record<ArgumentStatus, string> = {
 
 type ProviderDraftKeys = Partial<Record<ProviderId, string>>
 
+type GenerationUiState = {
+  message: string
+  model?: string
+  status: 'idle' | 'loading' | 'success' | 'fallback' | 'error'
+}
+
 function App() {
   const providerRepository = useMemo(() => createProviderSettingsRepository(window.localStorage), [])
   const roleRepository = useMemo(() => createRoleAssignmentsRepository(window.localStorage), [])
+  const localMockGenerator = useMemo(() => createLocalMockArgumentDiscoveryGenerator(), [])
+  const openAiGenerator = useMemo(() => createOpenAiDevArgumentDiscoveryGenerator(window.fetch.bind(window)), [])
   const [config, setConfig] = useState<HumanPrepConfig>(defaultConfig)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ArgumentStatus>>({})
   const [copyState, setCopyState] = useState('复制备赛包')
@@ -83,20 +100,29 @@ function App() {
   const [roleAssignments, setRoleAssignments] = useState<RoleAssignments>(() => roleRepository.load())
   const [providerDraftKeys, setProviderDraftKeys] = useState<ProviderDraftKeys>({})
   const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null)
+  const [generatedDiscovery, setGeneratedDiscovery] = useState<ArgumentDiscovery | undefined>()
+  const [generationMode, setGenerationMode] = useState<ArgumentDiscoveryGeneratorId>('local-mock')
+  const [generationState, setGenerationState] = useState<GenerationUiState>({
+    message: '当前使用本地确定性 mock。',
+    status: 'idle',
+  })
+  const [isGeneratingArgumentPool, setIsGeneratingArgumentPool] = useState(false)
   const presets = useMemo(() => getDebateFormatPresets(), [])
   const session = useMemo(
-    () => createHumanPrepSession(config, statusOverrides, { providerSettings, roleAssignments }),
-    [config, statusOverrides, providerSettings, roleAssignments],
+    () => createHumanPrepSession(config, statusOverrides, { providerSettings, roleAssignments, discoveryOverride: generatedDiscovery }),
+    [config, statusOverrides, providerSettings, roleAssignments, generatedDiscovery],
   )
 
   function updateConfig(next: HumanPrepConfig) {
     setConfig(next)
+    resetGeneratedDiscovery('配置已变更，已回到本地 mock。')
     setCopyState('复制备赛包')
   }
 
   function rerunPrep(event: FormEvent) {
     event.preventDefault()
     setStatusOverrides({})
+    resetGeneratedDiscovery('已重新生成本地 mock 论点池。')
     setCopyState('复制备赛包')
   }
 
@@ -105,6 +131,50 @@ function App() {
     setStatusOverrides(autoSelection.statusById)
     setConfig((current) => ({ ...current, strategyMode: 'ai-auto' }))
     setCopyState('复制备赛包')
+  }
+
+  function resetGeneratedDiscovery(message = '当前使用本地确定性 mock。') {
+    setGeneratedDiscovery(undefined)
+    setGenerationMode('local-mock')
+    setGenerationState({ message, status: 'idle' })
+  }
+
+  function applyGenerationResult(result: ArgumentDiscoveryGenerationResult) {
+    const isLocal = result.providerId === 'local-mock'
+
+    setGeneratedDiscovery(isLocal ? undefined : result.discovery)
+    setGenerationMode(isLocal ? 'local-mock' : 'openai-dev')
+    setGenerationState({
+      message: result.message,
+      model: result.model,
+      status: result.fallbackUsed ? 'fallback' : 'success',
+    })
+    setStatusOverrides({})
+    setCopyState('复制备赛包')
+  }
+
+  async function generateLocalArgumentPool() {
+    const request = createArgumentDiscoveryGenerationRequest(config, session.aiRun.roles)
+    const result = await localMockGenerator.generate(request)
+    applyGenerationResult(result)
+  }
+
+  async function generateRealArgumentPool() {
+    const request = createArgumentDiscoveryGenerationRequest(config, session.aiRun.roles)
+
+    setIsGeneratingArgumentPool(true)
+    setGenerationMode('openai-dev')
+    setGenerationState({ message: '正在调用本地 OpenAI dev endpoint 生成论点池…', status: 'loading' })
+
+    try {
+      const result = await generateArgumentDiscoveryWithFallback(openAiGenerator, localMockGenerator, request)
+      applyGenerationResult(result)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setGenerationState({ message: `生成失败：${message}`, status: 'error' })
+    } finally {
+      setIsGeneratingArgumentPool(false)
+    }
   }
 
   function updateCardStatus(card: ArgumentCard, status: ArgumentStatus) {
@@ -177,12 +247,14 @@ function App() {
   function persistProviderSettings(nextSettings: ProviderSettings) {
     setProviderSettings(nextSettings)
     providerRepository.save(nextSettings)
+    resetGeneratedDiscovery('服务设置已变更，已回到本地 mock。')
     setCopyState('复制备赛包')
   }
 
   function persistRoleAssignments(nextAssignments: RoleAssignments) {
     setRoleAssignments(nextAssignments)
     roleRepository.save(nextAssignments)
+    resetGeneratedDiscovery('角色分配已变更，已回到本地 mock。')
     setCopyState('复制备赛包')
   }
 
@@ -209,10 +281,15 @@ function App() {
         <aside className="side-column">
           <SetupPanel
             config={config}
+            generationMode={generationMode}
+            generationState={generationState}
+            isGeneratingArgumentPool={isGeneratingArgumentPool}
             presets={presets}
             session={session}
             onAutoSelect={applyAutoSelect}
             onChange={updateConfig}
+            onGenerateLocal={generateLocalArgumentPool}
+            onGenerateReal={generateRealArgumentPool}
             onSubmit={rerunPrep}
           />
           <ProviderSettingsPanel
@@ -436,17 +513,27 @@ function RoleAssignmentsPanel({
 
 function SetupPanel({
   config,
+  generationMode,
+  generationState,
+  isGeneratingArgumentPool,
   presets,
   session,
   onAutoSelect,
   onChange,
+  onGenerateLocal,
+  onGenerateReal,
   onSubmit,
 }: {
   config: HumanPrepConfig
+  generationMode: ArgumentDiscoveryGeneratorId
+  generationState: GenerationUiState
+  isGeneratingArgumentPool: boolean
   presets: DebateFormatPreset[]
   session: HumanPrepSession
   onAutoSelect: () => void
   onChange: (config: HumanPrepConfig) => void
+  onGenerateLocal: () => void
+  onGenerateReal: () => void
   onSubmit: (event: FormEvent) => void
 }) {
   const selectedPrimaryCount = session.selection.sides.reduce((sum, side) => sum + side.primary.length, 0)
@@ -524,6 +611,31 @@ function SetupPanel({
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="generation-control">
+        <span className="field-label">论点池生成</span>
+        <div className="generation-actions">
+          <button
+            className={generationMode === 'local-mock' ? 'secondary-action selected-generator' : 'secondary-action'}
+            disabled={isGeneratingArgumentPool}
+            type="button"
+            onClick={onGenerateLocal}
+          >
+            本地 mock 生成
+          </button>
+          <button
+            className={generationMode === 'openai-dev' ? 'primary-action selected-generator' : 'primary-action'}
+            disabled={isGeneratingArgumentPool}
+            type="button"
+            onClick={onGenerateReal}
+          >
+            {isGeneratingArgumentPool ? '真实生成中…' : '真实 AI 生成论点池'}
+          </button>
+        </div>
+        <p className={`generation-message generation-${generationState.status}`}>
+          {generationState.message}{generationState.model ? `（${generationState.model}）` : ''}
+        </p>
       </div>
 
       <div className="setup-actions">
