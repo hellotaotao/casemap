@@ -49,6 +49,7 @@ import type {
   FinalRouteMap,
   HumanPrepConfig,
   HumanPrepSession,
+  PreparationPackage,
   PreparedSide,
   PrepSideChoice,
   SimulationIteration,
@@ -101,7 +102,7 @@ function App() {
   const openAiGenerator = useMemo(() => createOpenAiDevArgumentDiscoveryGenerator(window.fetch.bind(window)), [])
   const [config, setConfig] = useState<HumanPrepConfig>(defaultConfig)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ArgumentStatus>>({})
-  const [copyState, setCopyState] = useState('复制备赛包')
+  const [copyState, setCopyState] = useState('复制战术包')
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>(() => providerRepository.load())
   const [roleAssignments, setRoleAssignments] = useState<RoleAssignments>(() => roleRepository.load())
   const [providerDraftKeys, setProviderDraftKeys] = useState<ProviderDraftKeys>({})
@@ -122,21 +123,21 @@ function App() {
   function updateConfig(next: HumanPrepConfig) {
     setConfig(next)
     resetGeneratedDiscovery('配置已变更，已回到本地 mock。')
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   function rerunPrep(event: FormEvent) {
     event.preventDefault()
     setStatusOverrides({})
     resetGeneratedDiscovery('已重新生成本地 mock 论点池。')
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   function applyAutoSelect() {
     const autoSelection = autoSelectArguments(session.discovery.candidateCards)
     setStatusOverrides(autoSelection.statusById)
     setConfig((current) => ({ ...current, strategyMode: 'ai-auto' }))
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   function resetGeneratedDiscovery(message = '当前使用本地确定性 mock。') {
@@ -156,7 +157,7 @@ function App() {
       status: result.fallbackUsed ? 'fallback' : 'success',
     })
     setStatusOverrides({})
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   async function generateLocalArgumentPool() {
@@ -202,7 +203,7 @@ function App() {
     nextStatuses[card.id] = status
     setStatusOverrides(nextStatuses)
     setConfig((current) => ({ ...current, strategyMode: 'human-quick' }))
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   function updateProviderDraft(providerId: ProviderId, value: string) {
@@ -254,14 +255,14 @@ function App() {
     setProviderSettings(nextSettings)
     providerRepository.save(nextSettings)
     resetGeneratedDiscovery('服务设置已变更，已回到本地 mock。')
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   function persistRoleAssignments(nextAssignments: RoleAssignments) {
     setRoleAssignments(nextAssignments)
     roleRepository.save(nextAssignments)
     resetGeneratedDiscovery('角色分配已变更，已回到本地 mock。')
-    setCopyState('复制备赛包')
+    setCopyState('复制战术包')
   }
 
   async function copyPrepPack() {
@@ -278,9 +279,9 @@ function App() {
       <header className="app-header">
         <div>
           <p className="eyebrow">CaseMap</p>
-          <h1>中文辩论 AI 备赛与攻防地图</h1>
+          <h1>强队式中文辩论赛前战术包</h1>
         </div>
-        <span className="future-pill">模型竞技场 · 规划中</span>
+        <span className="future-pill">赛前工具 · 非赛中提词</span>
       </header>
 
       <section className="workspace">
@@ -316,6 +317,7 @@ function App() {
         </aside>
 
         <section className="flow">
+          <PreparationPackagePanel prepPackage={session.preparationPackage} />
           <DebateMapPanel map={session.debateMap} />
           <DiscoveryPanel session={session} onSetStatus={updateCardStatus} />
           <SimulationPanel iterations={session.iterations} format={session.format} />
@@ -672,6 +674,204 @@ function SetupPanel({
   )
 }
 
+function PreparationPackagePanel({ prepPackage }: { prepPackage: PreparationPackage }) {
+  const { artifacts } = prepPackage
+  const firstArgumentRows = artifacts.argumentPool.slice(0, 8)
+  const firstAttackRows = artifacts.attackDefenseTable.slice(0, 5)
+  const firstCrossTrees = artifacts.crossExaminationTrees.slice(0, 4)
+  const firstFreeDebateCards = artifacts.freeDebateTacticCards.slice(0, 4)
+  const firstEvidenceGaps = artifacts.evidenceGapChecklist.slice(0, 6)
+
+  return (
+    <section className="stage-section prep-package-section">
+      <div className="package-hero">
+        <div>
+          <p className="eyebrow">Main Output</p>
+          <h2>{prepPackage.title}</h2>
+          <p>{prepPackage.positioning}</p>
+        </div>
+        <div className="package-stat-grid" aria-label="备战包概览">
+          <PackageStat label="Artifacts" value={prepPackage.artifactNames.length} />
+          <PackageStat label="论点筛选" value={artifacts.argumentPool.length} />
+          <PackageStat label="攻防条目" value={artifacts.attackDefenseTable.length} />
+          <PackageStat label="训练缺口" value={artifacts.evidenceGapChecklist.length} />
+        </div>
+      </div>
+
+      <div className="artifact-directory" aria-label="Artifact 目录">
+        {prepPackage.artifactNames.map((name) => (
+          <span key={name}>{name}</span>
+        ))}
+      </div>
+
+      <div className="package-grid">
+        <ArtifactCard title="辩题拆解卡">
+          <p className="artifact-lead">{artifacts.motionBreakdown.motion}</p>
+          <ArtifactList
+            items={[
+              `核心冲突：${artifacts.motionBreakdown.centralConflict}`,
+              `主要判准：${artifacts.motionBreakdown.judgingCriteria.join(' / ')}`,
+              `易跑偏：${artifacts.motionBreakdown.commonPitfalls[0]}`,
+            ]}
+          />
+        </ArtifactCard>
+
+        <ArtifactCard title="双方立场地图">
+          <div className="stance-mini-grid">
+            {artifacts.stanceMap.sides.map((side) => (
+              <div className="stance-mini-card" key={side.side}>
+                <strong>{side.label}</strong>
+                <p>{side.worldview}</p>
+                <span>{side.strongestPath.slice(0, 3).join(' → ')}</span>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+      </div>
+
+      <ArtifactCard title="论点池与筛选表">
+        <div className="artifact-table argument-artifact-table">
+          {firstArgumentRows.map((row) => (
+            <div className="artifact-row" key={row.id}>
+              <span className={`package-status status-${row.status}`}>{row.statusLabel}</span>
+              <strong>{row.sideLabel} · {row.title}</strong>
+              <p>{toLead(row.claim)}</p>
+              <p>证据：{row.evidenceNeeds}</p>
+              <b>抗打 {row.antiHitScore} / 可投票 {row.votability}</b>
+            </div>
+          ))}
+        </div>
+      </ArtifactCard>
+
+      <div className="package-grid">
+        <ArtifactCard title="攻防表">
+          <div className="artifact-stack">
+            {firstAttackRows.map((row) => (
+              <div className="artifact-mini-row" key={`${row.side}-${row.opponentAttack}`}>
+                <span>{row.sideLabel} · {row.attackType}</span>
+                <strong>{toLead(row.opponentAttack)}</strong>
+                <p>{row.mainResponse}</p>
+                <em>{row.returnToMainline}</em>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+
+        <ArtifactCard title="质询树 / 盘问树">
+          <div className="artifact-stack">
+            {firstCrossTrees.map((tree) => (
+              <div className="artifact-mini-row" key={tree.id}>
+                <span>{tree.sideLabel}</span>
+                <strong>{tree.target}</strong>
+                <p>{tree.openingQuestion}</p>
+                <em>{tree.closingLine}</em>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+
+        <ArtifactCard title="自由辩战术卡">
+          <div className="artifact-stack">
+            {firstFreeDebateCards.map((card) => (
+              <div className="artifact-mini-row" key={card.id}>
+                <span>{card.sideLabel} · {card.trigger}</span>
+                <strong>{card.oneLineResponse}</strong>
+                <p>{card.followUpQuestions.join(' / ')}</p>
+                <em>{card.returnMainline}</em>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+
+        <ArtifactCard title="发言稿 / 发言结构包">
+          <div className="artifact-stack">
+            {artifacts.speechStructurePacks.flatMap((pack) =>
+              pack.speeches.slice(0, 2).map((speech) => (
+                <div className="artifact-mini-row" key={`${pack.side}-${speech.role}`}>
+                  <span>{pack.sideLabel}</span>
+                  <strong>{speech.role}</strong>
+                  <p>{speech.structure.slice(0, 2).join('；')}</p>
+                </div>
+              )),
+            )}
+          </div>
+        </ArtifactCard>
+
+        <ArtifactCard title="结辩胜负点包">
+          <div className="artifact-stack">
+            {artifacts.closingVotingIssuePacks.map((pack) => (
+              <div className="artifact-mini-row" key={pack.side}>
+                <span>{pack.sideLabel}</span>
+                <strong>{pack.votingIssues.join(' / ')}</strong>
+                <p>{pack.advantageClosing}</p>
+                <em>放弃：{pack.dropDisputes.slice(0, 2).join(' / ')}</em>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+
+        <ArtifactCard title="证据缺口清单">
+          <div className="artifact-stack">
+            {firstEvidenceGaps.map((item) => (
+              <div className="artifact-mini-row" key={item.id}>
+                <span>{item.sideLabel} · {item.priority}</span>
+                <strong>{item.mainline}</strong>
+                <p>{item.currentGap}</p>
+                <em>{item.caseDirection}</em>
+              </div>
+            ))}
+          </div>
+        </ArtifactCard>
+      </div>
+
+      <ArtifactCard title="训练与复盘清单">
+        <div className="training-grid">
+          <TrainingColumn title="模拟赛检查" lines={artifacts.trainingReviewChecklist.scrimmageChecks} />
+          <TrainingColumn title="辩位训练" lines={artifacts.trainingReviewChecklist.roleTrainingFocus} />
+          <TrainingColumn title="复盘问题" lines={artifacts.trainingReviewChecklist.postMatchReviewQuestions} />
+        </div>
+      </ArtifactCard>
+    </section>
+  )
+}
+
+function PackageStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function ArtifactCard({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <article className="artifact-card">
+      <h3>{title}</h3>
+      {children}
+    </article>
+  )
+}
+
+function ArtifactList({ items }: { items: string[] }) {
+  return (
+    <ul className="artifact-list">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  )
+}
+
+function TrainingColumn({ lines, title }: { lines: string[]; title: string }) {
+  return (
+    <div className="training-column">
+      <strong>{title}</strong>
+      <ArtifactList items={lines} />
+    </div>
+  )
+}
+
 function DebateMapPanel({ map }: { map: DebateMap }) {
   const argumentById = new Map(map.argumentNodes.map((node) => [node.id, node]))
   const attackById = new Map(map.attackNodes.map((node) => [node.id, node]))
@@ -720,26 +920,30 @@ function DebateMapSideColumn({
   promptById: Map<string, DebateMap['freeDebatePrompts'][number]>
   sideNode: DebateMapSideNode
 }) {
-  const sideArguments = [
-    ...sideNode.coreArgumentIds.map((id) => argumentById.get(id)).filter(isDefined),
-    ...sideNode.backupArgumentIds.map((id) => argumentById.get(id)).filter(isDefined),
-  ]
+  const coreArguments = sideNode.coreArgumentIds.map((id) => argumentById.get(id)).filter(isDefined)
+  const backupArguments = sideNode.backupArgumentIds.map((id) => argumentById.get(id)).filter(isDefined)
   const sideLinks = map.defenseLinks.filter((link) => link.side === sideNode.side)
 
   return (
     <article className={`map-side-column side-${sideNode.side}`}>
       <div className="side-node">
-        <span>{sideNode.label}</span>
+        <span className="role-badge">{sideNode.label}</span>
         <p>{sideNode.stance}</p>
       </div>
 
-      <div className="map-node-stack">
-        {sideArguments.map((argument) => (
+      <MapCluster count={coreArguments.length} label="Core line" title="主线">
+        {coreArguments.map((argument) => (
           <VisualArgumentNode gap={argument.evidenceGapId ? gapById.get(argument.evidenceGapId) : undefined} key={argument.id} node={argument} />
         ))}
-      </div>
+      </MapCluster>
 
-      <div className="defense-link-list">
+      <MapCluster count={backupArguments.length} label="Backup" title="备用">
+        {backupArguments.map((argument) => (
+          <VisualArgumentNode gap={argument.evidenceGapId ? gapById.get(argument.evidenceGapId) : undefined} key={argument.id} node={argument} />
+        ))}
+      </MapCluster>
+
+      <MapCluster count={sideLinks.length} label="Attack ⇄ Defense" title="攻防连线">
         {sideLinks.map((link) => (
           <VisualDefenseLink
             argument={argumentById.get(link.toArgumentId)}
@@ -749,8 +953,31 @@ function DebateMapSideColumn({
             prompt={promptById.get(link.freeDebatePromptId)}
           />
         ))}
-      </div>
+      </MapCluster>
     </article>
+  )
+}
+
+function MapCluster({
+  children,
+  count,
+  label,
+  title,
+}: {
+  children: ReactNode
+  count: number
+  label: string
+  title: string
+}) {
+  return (
+    <section className="map-cluster">
+      <div className="cluster-heading">
+        <span>{label}</span>
+        <strong>{title}</strong>
+        <b>{count}</b>
+      </div>
+      <div className="map-node-stack">{children}</div>
+    </section>
   )
 }
 
@@ -764,11 +991,11 @@ function VisualArgumentNode({
   return (
     <div className={`visual-argument-node is-${node.status}`}>
       <div className="map-node-topline">
-        <span>{statusLabel[node.status]}</span>
+        <span className="state-badge">{statusLabel[node.status]}</span>
         <span>强 {node.strengthScore} / 风险 {node.riskScore}</span>
       </div>
       <strong>{node.title}</strong>
-      <p>{node.claim}</p>
+      <p className="node-claim">{toLead(node.claim)}</p>
       {gap ? <EvidenceGapFlag gap={gap} /> : null}
     </div>
   )
@@ -791,17 +1018,19 @@ function VisualDefenseLink({
     <div className="visual-defense-link">
       <div className="attack-node">
         <div className="map-node-topline">
-          <span>{sideLabel[attack.side]}攻击</span>
+          <span className="state-badge danger">{sideLabel[attack.side]}攻击</span>
           <span>{attack.likelyStage} · 威胁 {attack.threatScore}</span>
         </div>
         <strong>{attack.title}</strong>
-        <p>{attack.claim}</p>
+        <p className="node-claim">{toLead(attack.claim)}</p>
       </div>
       <div className="defense-node">
-        <span>防守连线 → {argument.title}</span>
-        <p>{link.response}</p>
-        <p>{link.backupResponse}</p>
-        {prompt ? <a href={`#${prompt.id}`} id={prompt.id}>{prompt.prompt}</a> : null}
+        <span className="state-badge defense">防守 → {argument.title}</span>
+        <p className="node-claim">{toLead(link.response)}</p>
+        <div className="secondary-detail">
+          <p>{link.backupResponse}</p>
+          {prompt ? <a href={`#${prompt.id}`} id={prompt.id}>{prompt.prompt}</a> : null}
+        </div>
       </div>
     </div>
   )
@@ -812,7 +1041,7 @@ function EvidenceGapFlag({ gap }: { gap: DebateMapEvidenceGap }) {
     <div className={`evidence-gap-flag gap-${gap.severity}`}>
       <span>{formatEvidenceGapSeverity(gap.severity)}</span>
       <p>{gap.evidenceType}</p>
-      <p>{gap.reason}</p>
+      <p className="gap-reason">{gap.reason}</p>
     </div>
   )
 }
@@ -879,7 +1108,7 @@ function ArgumentCardView({
       </div>
       <GenerationBadge source={card.generatedBy} />
       <h3>{card.title}</h3>
-      <p className="claim">{card.claim}</p>
+      <p className="claim">{toLead(card.claim)}</p>
 
       <dl className="card-facts">
         <div>
@@ -1054,7 +1283,7 @@ function ExportPanel({
   return (
     <section className="stage-section export-section">
       <div className="export-header">
-        <SectionHeader eyebrow="Prep Pack" title="导出备赛包" />
+        <SectionHeader eyebrow="Prep Pack" title="导出赛前战术包" />
         <button className="primary-action" onClick={onCopy} type="button">
           {copyState}
         </button>
@@ -1071,6 +1300,12 @@ function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
       <h2>{title}</h2>
     </div>
   )
+}
+
+function toLead(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, ' ')
+  const match = normalized.match(/^(.+?[。！？!?])(?:\s|$)/)
+  return match?.[1] ?? normalized
 }
 
 function ScorePill({ label, value }: { label: string; value: number }) {

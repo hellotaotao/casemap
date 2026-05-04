@@ -1,6 +1,7 @@
 import { createDefaultProviderSettings, type ProviderSettings } from './aiProviders'
 import { createDebateMap } from './debateMap'
 import { createSeededRandom, scoreBetween, stableHash } from './deterministic'
+import { createPreparationPackage, exportPreparationPackageMarkdown } from './preparationPackage'
 import {
   createAiRunMetadata,
   createDefaultRoleAssignments,
@@ -589,6 +590,14 @@ export function createHumanPrepSession(
     opponentLikelyArguments: discovery.opponentLikelyArguments,
     selection,
   })
+  const preparationPackage = createPreparationPackage({
+    config: normalized,
+    debateMap,
+    discovery,
+    finalRouteMap,
+    format,
+    selection,
+  })
 
   return {
     aiRun,
@@ -598,7 +607,12 @@ export function createHumanPrepSession(
     format,
     finalRouteMap,
     iterations,
-    prepPack: exportPrepPack(normalized, format, discovery, selection, iterations, finalRouteMap, aiRun),
+    preparationPackage,
+    prepPack: [
+      exportPreparationPackageMarkdown(preparationPackage),
+      '',
+      ...createAiRunPrepPackLines(aiRun),
+    ].join('\n'),
     selection,
   }
 }

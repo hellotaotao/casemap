@@ -148,6 +148,154 @@ export type FinalRouteMap = {
   generatedBy?: GenerationSource
 }
 
+export type PrepPackageArgumentStatus = 'mainline' | 'support' | 'rewrite' | 'eliminated'
+
+export type MotionBreakdownCard = {
+  motion: string
+  keywords: string[]
+  interpretationSpace: string[]
+  centralConflict: string
+  judgingCriteria: string[]
+  commonPitfalls: string[]
+}
+
+export type StanceMapSide = {
+  side: PreparedSide
+  label: string
+  worldview: string
+  strongestPath: string[]
+  burdenOfProof: string[]
+  weakPoints: string[]
+}
+
+export type StanceMapArtifact = {
+  sides: StanceMapSide[]
+}
+
+export type ArgumentPoolRow = {
+  id: string
+  side: PreparedSide
+  sideLabel: string
+  title: string
+  claim: string
+  reasoningChain: string[]
+  evidenceNeeds: string
+  strongestAttack: string
+  bestDefense: string
+  antiHitScore: number
+  votability: number
+  status: PrepPackageArgumentStatus
+  statusLabel: string
+}
+
+export type AttackDefenseRow = {
+  side: PreparedSide
+  sideLabel: string
+  opponentAttack: string
+  attackType: string
+  mainResponse: string
+  backupResponse: string
+  concession: string
+  bottomLine: string
+  returnToMainline: string
+}
+
+export type CrossExaminationBranch = {
+  opponentAnswer: string
+  followUp: string
+}
+
+export type CrossExaminationTree = {
+  id: string
+  side: PreparedSide
+  sideLabel: string
+  target: string
+  openingQuestion: string
+  branches: CrossExaminationBranch[]
+  closingLine: string
+  successSignal: string
+  fallbackRoute: string
+}
+
+export type FreeDebateTacticCard = {
+  id: string
+  side: PreparedSide
+  sideLabel: string
+  trigger: string
+  oneLineResponse: string
+  followUpQuestions: string[]
+  expandableMaterial: string
+  trapToAvoid: string
+  returnMainline: string
+}
+
+export type SpeechStructure = {
+  role: string
+  purpose: string
+  structure: string[]
+}
+
+export type SpeechStructurePack = {
+  side: PreparedSide
+  sideLabel: string
+  speeches: SpeechStructure[]
+}
+
+export type ClosingVotingIssuePack = {
+  side: PreparedSide
+  sideLabel: string
+  votingIssues: string[]
+  advantageClosing: string
+  opponentStrongAttackClosing: string
+  deadlockClosing: string
+  dropDisputes: string[]
+  mustRepeatMainlines: string[]
+}
+
+export type EvidenceGapChecklistItem = {
+  id: string
+  side: PreparedSide
+  sideLabel: string
+  mainline: string
+  evidenceType: string
+  currentGap: string
+  priority: 'high' | 'medium' | 'low'
+  caseDirection: string
+  avoidMaterial: string
+}
+
+export type TrainingReviewChecklist = {
+  scrimmageChecks: string[]
+  roleTrainingFocus: string[]
+  postMatchReviewQuestions: string[]
+  piercedArguments: string[]
+  effectiveCrossExaminationPaths: string[]
+  freeDebateCardsToRewrite: string[]
+}
+
+export type PreparationPackageArtifactSet = {
+  motionBreakdown: MotionBreakdownCard
+  stanceMap: StanceMapArtifact
+  argumentPool: ArgumentPoolRow[]
+  attackDefenseTable: AttackDefenseRow[]
+  crossExaminationTrees: CrossExaminationTree[]
+  freeDebateTacticCards: FreeDebateTacticCard[]
+  speechStructurePacks: SpeechStructurePack[]
+  closingVotingIssuePacks: ClosingVotingIssuePack[]
+  evidenceGapChecklist: EvidenceGapChecklistItem[]
+  trainingReviewChecklist: TrainingReviewChecklist
+}
+
+export type PreparationPackage = {
+  title: string
+  motion: string
+  scopeLabel: string
+  formatName: string
+  positioning: string
+  artifactNames: string[]
+  artifacts: PreparationPackageArtifactSet
+}
+
 export type DebateMapSideNode = {
   side: PreparedSide
   label: string
@@ -229,5 +377,6 @@ export type HumanPrepSession = {
   iterations: SimulationIteration[]
   finalRouteMap: FinalRouteMap
   debateMap: DebateMap
+  preparationPackage: PreparationPackage
   prepPack: string
 }

@@ -84,8 +84,24 @@ describe('human debate prep domain', () => {
     expect(routeMap.attackDefenseMap.length).toBeGreaterThanOrEqual(4)
     expect(routeMap.abandonedPreparedRoutes.length).toBeGreaterThan(0)
     expect(routeMap.evidenceChecklist.length).toBeGreaterThanOrEqual(6)
-    expect(session.prepPack).toContain('# CaseMap 人类备赛包')
-    expect(session.prepPack).toContain('## 攻防地图')
+    expect(session.preparationPackage.title).toContain('强队式赛前战术包')
+    expect(session.preparationPackage.artifactNames).toEqual([
+      '辩题拆解卡',
+      '双方立场地图',
+      '论点池与筛选表',
+      '攻防表',
+      '质询树 / 盘问树',
+      '自由辩战术卡',
+      '发言稿 / 发言结构包',
+      '结辩胜负点包',
+      '证据缺口清单',
+      '训练与复盘清单',
+    ])
+    expect(session.preparationPackage.artifacts.argumentPool.length).toBeGreaterThanOrEqual(10)
+    expect(session.preparationPackage.artifacts.crossExaminationTrees.length).toBeGreaterThan(0)
+    expect(session.preparationPackage.artifacts.trainingReviewChecklist.scrimmageChecks.join('\n')).toContain('不在正式比赛中调用 AI 提词')
+    expect(session.prepPack).toContain('# CaseMap 强队式赛前战术包')
+    expect(session.prepPack).toContain('## 攻防表')
   })
 
   it('supports preparing both sides without changing deterministic behavior', () => {
